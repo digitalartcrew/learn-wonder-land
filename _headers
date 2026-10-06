@@ -1,0 +1,32 @@
+# Cloudflare Pages headers — https://developers.cloudflare.com/pages/configuration/headers/
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+
+# The HTML shell must never be stale — it points at everything else.
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+/privacy.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# The service worker decides when to update the app; it must not be cached.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Code changes on every deploy, so revalidate rather than cache hard.
+/*.js
+  Cache-Control: public, max-age=0, must-revalidate
+/*.css
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Icons and the manifest barely ever change.
+/assets/*
+  Cache-Control: public, max-age=604800
+
+# Signups are never cached anywhere.
+/api/*
+  Cache-Control: no-store

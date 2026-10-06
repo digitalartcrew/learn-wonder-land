@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#1b1040">
+<meta name="description" content="WonderWorld — a magical learning adventure for children ages 5 to 12. Math, reading, science, sustainability and money skills in one friendly game.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WonderWorld">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="assets/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<!-- iOS ignores SVG here, so this must be a PNG -->
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<title>WonderWorld — A Magical Learning Adventure</title>
+</head>
+<body class="is-booting">
+
+<div id="sky" aria-hidden="true"></div>
+
+<!-- ======================= HUD ======================= -->
+<header id="hud" class="hud" hidden>
+  <button class="hud-avatar" id="hud-avatar" data-nav="profile" aria-label="Open my profile"></button>
+  <div class="hud-info">
+    <div class="hud-nameline">
+      <span class="hud-name" id="hud-playername">Explorer</span>
+      <span class="chip chip-level" id="hud-level">Lv 1</span>
+    </div>
+    <div class="xpbar" id="hud-xpbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Experience toward next level">
+      <i id="hud-xpfill"></i><span id="hud-xptext">0 / 100 XP</span>
+    </div>
+  </div>
+  <div class="hud-gems" id="hud-gems" aria-label="Gems: 0"><span aria-hidden="true">💎</span> <b>0</b></div>
+  <nav class="hud-nav" aria-label="Main navigation">
+    <button class="icon-btn" data-nav="map" aria-label="World map"><span aria-hidden="true">🗺️</span></button>
+    <button class="icon-btn" data-nav="tree" aria-label="Knowledge Tree"><span aria-hidden="true">🌳</span></button>
+    <button class="icon-btn" id="btn-sound" aria-label="Sound: on" aria-pressed="true"><span aria-hidden="true">🔊</span></button>
+  </nav>
+</header>
+
+<main id="app">
+
+  <!-- ======================= TITLE ======================= -->
+  <section class="screen" id="screen-title" aria-label="WonderWorld title screen">
+    <div class="title-wrap">
+      <div class="title-art">
+        <div class="title-tree" id="title-tree"></div>
+        <div class="title-cast">
+          <div class="title-hero" id="title-hero"></div>
+          <div class="title-buddy" id="title-buddy"><span aria-hidden="true">🐉</span></div>
+        </div>
+      </div>
+      <h1 class="logo"><span class="logo-wonder">Wonder</span><span class="logo-world">World</span></h1>
+      <p class="tagline">The Knowledge Tree has lost its power.<br>Five crystals are missing. Will you help?</p>
+      <div class="title-buttons" id="title-buttons"></div>
+      <div class="title-footer">
+        <button class="ghost-btn" data-nav="parent"><span aria-hidden="true">👨‍👩‍👧</span> Grown-Ups</button>
+        <button class="ghost-btn" id="btn-settings"><span aria-hidden="true">⚙️</span> Settings</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= CHARACTER CREATOR ======================= -->
+  <section class="screen" id="screen-create" aria-label="Create your explorer">
+    <div class="pad">
+      <h2 class="screen-title">Create Your Explorer</h2>
+      <div class="create-grid">
+        <div class="create-preview card">
+          <div class="preview-stage">
+            <div id="create-avatar" class="big-avatar"></div>
+            <div id="create-buddy" class="big-buddy" aria-hidden="true">🐉</div>
+          </div>
+          <p class="preview-name" id="create-previewname">Explorer</p>
+        </div>
+        <div class="create-options">
+          <div class="card opt-card">
+            <label class="opt-label" for="input-name">1. What's your explorer name?</label>
+            <input id="input-name" class="name-input" type="text" maxlength="12" placeholder="Type a name" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+            <p class="hint-text">Use a nickname. Never your real full name.</p>
+          </div>
+          <div class="card opt-card"><p class="opt-label">2. Skin</p><div class="swatches" id="opt-skin"></div></div>
+          <div class="card opt-card"><p class="opt-label">3. Hair style</p><div class="chips" id="opt-hair"></div>
+            <p class="opt-label sub">Hair colour</p><div class="swatches" id="opt-haircolor"></div></div>
+          <div class="card opt-card"><p class="opt-label">4. Outfit</p><div class="chips" id="opt-outfit"></div></div>
+          <div class="card opt-card"><p class="opt-label">5. Choose a companion</p><div class="companions" id="opt-companion"></div></div>
+        </div>
+      </div>
+      <div class="create-actions">
+        <button class="big-btn primary" id="btn-start-adventure">Start the Adventure <span aria-hidden="true">✨</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= WORLD MAP ======================= -->
+  <section class="screen" id="screen-map" aria-label="WonderWorld map">
+    <div class="map-outer">
+      <div class="map-stage" id="map-stage">
+        <svg class="map-paths" id="map-paths" aria-hidden="true"></svg>
+        <div class="map-nodes" id="map-nodes"></div>
+      </div>
+      <div class="map-caption" id="map-caption"></div>
+    </div>
+  </section>
+
+  <!-- ======================= KNOWLEDGE TREE ======================= -->
+  <section class="screen" id="screen-tree" aria-label="The Knowledge Tree">
+    <header class="world-bar">
+      <button class="icon-btn" data-nav="map" aria-label="Back to the map"><span aria-hidden="true">←</span></button>
+      <h2>🌳 Knowledge Tree</h2><div class="bar-space"></div>
+    </header>
+    <div class="world-body" id="tree-body"></div>
+  </section>
+
+  <!-- ======================= PROFILE ======================= -->
+  <section class="screen" id="screen-profile" aria-label="My profile">
+    <header class="world-bar">
+      <button class="icon-btn" data-nav="map" aria-label="Back to the map"><span aria-hidden="true">←</span></button>
+      <h2>🎒 My Adventure</h2><div class="bar-space"></div>
+    </header>
+    <div class="world-body" id="profile-body"></div>
+  </section>
+
+  <!-- ======================= WORLDS ======================= -->
+  <section class="screen" id="screen-math" aria-label="Math Island">
+    <header class="world-bar math">
+      <button class="icon-btn" id="math-back" aria-label="Back"><span aria-hidden="true">←</span></button>
+      <h2>🧮 Math Island</h2><div class="bar-space" id="math-bar"></div>
+    </header>
+    <div class="world-body" id="math-body"></div>
+  </section>
+
+  <section class="screen" id="screen-story" aria-label="Story Forest">
+    <header class="world-bar story">
+      <button class="icon-btn" id="story-back" aria-label="Back"><span aria-hidden="true">←</span></button>
+      <h2>📚 Story Forest</h2><div class="bar-space" id="story-bar"></div>
+    </header>
+    <div class="world-body" id="story-body"></div>
+  </section>
+
+  <section class="screen" id="screen-science" aria-label="Science Lab">
+    <header class="world-bar science">
+      <button class="icon-btn" id="science-back" aria-label="Back"><span aria-hidden="true">←</span></button>
+      <h2>🧪 Science Lab</h2><div class="bar-space" id="science-bar"></div>
+    </header>
+    <div class="world-body" id="science-body"></div>
+  </section>
+
+  <section class="screen" id="screen-city" aria-label="Planet City">
+    <header class="world-bar city">
+      <button class="icon-btn" id="city-back" aria-label="Back"><span aria-hidden="true">←</span></button>
+      <h2>🌎 Planet City</h2><div class="bar-space" id="city-bar"></div>
+    </header>
+    <div class="world-body" id="city-body"></div>
+  </section>
+
+  <section class="screen" id="screen-business" aria-label="Business Town">
+    <header class="world-bar business">
+      <button class="icon-btn" id="business-back" aria-label="Back"><span aria-hidden="true">←</span></button>
+      <h2>💰 Business Town</h2><div class="bar-space" id="business-bar"></div>
+    </header>
+    <div class="world-body" id="business-body"></div>
+  </section>
+
+  <!-- ======================= PARENT DASHBOARD ======================= -->
+  <section class="screen parent-screen" id="screen-parent" aria-label="Parent dashboard">
+    <header class="world-bar parent">
+      <button class="icon-btn" id="parent-back" aria-label="Back to the game"><span aria-hidden="true">←</span></button>
+      <h2>Grown-Ups Dashboard</h2><div class="bar-space"></div>
+    </header>
+    <div class="world-body" id="parent-body"></div>
+  </section>
+
+</main>
+
+<!-- Floating companion buddy -->
+<button id="buddy" class="buddy" hidden aria-label="Talk to your companion">
+  <span class="buddy-face" id="buddy-face" aria-hidden="true">🐉</span>
+  <span class="buddy-bubble" id="buddy-bubble" role="status"></span>
+</button>
+
+<div id="fx-layer" aria-hidden="true"></div>
+<div id="toast-layer" role="status" aria-live="polite"></div>
+<div id="modal-layer" class="modal-layer" hidden>
+  <div class="modal-backdrop" id="modal-backdrop"></div>
+  <div class="modal card" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h3 id="modal-title"></h3>
+    <div id="modal-body"></div>
+    <div id="modal-actions" class="modal-actions"></div>
+  </div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/art.js"></script>
+<script src="js/screens.js"></script>
+<script src="js/worlds/math.js"></script>
+<script src="js/worlds/story.js"></script>
+<script src="js/worlds/science.js"></script>
+<script src="js/worlds/city.js"></script>
+<script src="js/worlds/business.js"></script>
+<script src="game.js"></script>
+<script>
+  /* Offline support. Only runs on a real server — harmless over file://. */
+  if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () { /* fine without it */ });
+    });
+  }
+</script>
+</body>
+</html>
