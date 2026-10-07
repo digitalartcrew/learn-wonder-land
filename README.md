@@ -84,8 +84,18 @@ WonderWorld/
 │       ├── science.js         Science Lab — plant, magnet, weather experiments
 │       ├── city.js            Planet City — sustainable city builder
 │       └── business.js        Business Town — lemonade stand simulation
+├── privacy.html               privacy policy (linked from the signup form)
+├── 404.html                   disables Cloudflare's SPA fallback
+├── sw.js                      service worker — offline play
+├── _headers                   Cloudflare Pages security + caching headers
+├── functions/
+│   └── api/
+│       ├── subscribe.js       POST — stores a parent signup in Cloudflare KV
+│       └── subscribers.js     GET  — token-protected CSV export
 ├── assets/
 │   ├── icon.svg               app icon (pure SVG — nothing to break)
+│   ├── apple-touch-icon.png   iOS home-screen icon (iOS ignores SVG here)
+│   ├── icon-192/512*.png      PWA + maskable icons
 │   └── manifest.webmanifest   installable web app metadata
 ├── tools/
 │   ├── logic-test.js          headless game-logic tests (node)
@@ -288,7 +298,7 @@ npm i playwright-core            # then point PW/CHROME_PATH at a Chromium
 node tools/browser-test.js http://127.0.0.1:8111
 ```
 
-**`logic-test.js` (59 checks)** verifies save/load round-trips and
+**`logic-test.js` (66 checks)** verifies save/load round-trips and
 forward-compatible merging, level curves, unlock thresholds, crystal
 restoration, 50 000 generated maths questions (answer always present, no
 duplicate options, arithmetic actually correct), story content integrity, that
@@ -301,7 +311,7 @@ that each one renders valid SVG with a screen-reader description and references
 no external files, and that the celebration audio degrades safely when there is
 no AudioContext.
 
-**`browser-test.js` (104 checks)** plays the game: creates a character, crosses
+**`browser-test.js` (109 checks)** plays the game: creates a character, crosses
 the bridge, deliberately answers wrong to confirm hints appear and nothing
 "fails" the child, reads a whole story chapter including spelling and sentence
 building, runs the plant/magnet/weather experiments, builds a city and watches
@@ -314,7 +324,82 @@ iPad-landscape sizes with big-text mode on. Screenshots land in `.shots/`.
 
 ---
 
-## 8. Sound and celebrations
+## 8. Deploying to Cloudflare Pages
+
+The game is static files plus one Pages Function, so there is no build step.
+
+### First deploy
+1. Push this repo to GitHub.
+2. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git**.
+3. Build settings: **leave the build command empty**, set **Build output directory
+   to `/`**. Save and deploy.
+
+### Make the mailing list work (two dashboard settings)
+The signup endpoint returns `503 not_configured` until both of these exist. The
+form degrades to a "email us instead" link, so **it fails quietly** — set these
+before you share the link.
+
+1. **Workers & Pages → KV → Create namespace**, call it `wonderworld-subscribers`.
+2. Your Pages project → **Settings → Functions → KV namespace bindings** →
+   add `SUBSCRIBERS` → the namespace above.
+3. Your Pages project → **Settings → Environment variables** → add
+   `EXPORT_TOKEN`, set to a long random string (`openssl rand -hex 32`).
+   Mark it **encrypted**.
+4. Redeploy once so the bindings attach.
+
+> ⚠️ **Do not add a `wrangler.toml` with `pages_build_output_dir`.** If that file
+> exists, Cloudflare treats it as the source of truth and the dashboard bindings
+> above become read-only — `SUBSCRIBERS` never binds and every signup silently
+> fails. This repo deliberately has no `wrangler.toml` for that reason.
+
+### Download the list
+```bash
+curl -H "Authorization: Bearer $EXPORT_TOKEN" \
+     https://yourdomain.com/api/subscribers -o subscribers.csv
+```
+The token is header-only on purpose — a token in a query string ends up in server
+logs, shell history and browser history. The endpoint fails closed: if
+`EXPORT_TOKEN` is unset it refuses every request.
+
+### Local development with the API working
+```bash
+npx wrangler pages dev . --kv SUBSCRIBERS --binding EXPORT_TOKEN=dev-token
+```
+Plain `python3 -m http.server` also works for everything except `/api/*`.
+
+### Recommended hardening in the dashboard
+- **Security → WAF → Rate limiting rules**: 5 requests / 10 min per IP on
+  `/api/subscribe`. The in-code limiter is best-effort only — KV allows one write
+  per second per key, so it cannot be relied on during an actual flood.
+- **SSL/TLS → Edge Certificates → Enable HSTS** (off by default).
+- Consider **Turnstile** on the form if bots find it.
+
+### Every deploy
+**Bump `VERSION` in `sw.js`.** Old caches are deleted on activate; that constant is
+what triggers it. Forget, and returning visitors keep the previous version.
+
+### After the first deploy, confirm nothing leaked
+```bash
+for p in /tools/browser-test.js /README.md /functions/api/subscribe.js /nonexistent; do
+  curl -s -o /dev/null -w "%{http_code} $p\n" https://yourdomain.com$p
+done
+```
+`/functions/*` and `/nonexistent` must be 404. `tools/` and `README.md` are
+tracked files and *will* be served — harmless (no secrets), but if you'd rather
+they weren't, move the eight shipping items into a `public/` directory and set the
+build output directory to `public`.
+
+### Cloudflare Pages specifics already handled
+| Gotcha | How it's dealt with |
+|---|---|
+| `/index.html` 308-redirects to `/` | `sw.js` precaches canonical URLs (`./`, `privacy`) and refuses to cache any redirected response — a redirected response can never satisfy a navigation, which silently breaks offline launch |
+| No `404.html` ⇒ SPA fallback | `404.html` exists, so unknown paths 404 instead of serving the game at a broken base URL |
+| `_headers` ignores Functions | Both Functions set their own `cache-control`, `nosniff` and `referrer-policy` |
+| No content hashing | Navigations and `.js`/`.css` are network-first, so new HTML can never run against old JavaScript |
+
+---
+
+## 9. Sound and celebrations
 
 All audio is generated at runtime — there are no sound files to download.
 
@@ -337,7 +422,7 @@ Two independent switches in **Settings**:
 - **Cheering voice** — turns off only the spoken praise, keeping the chimes and
   applause, for families who find text-to-speech distracting
 
-## 9. What it teaches
+## 10. What it teaches
 
 | World | Skills |
 |---|---|
@@ -354,7 +439,7 @@ from the child's game and needs no login.
 
 ---
 
-## 10. Child-safety design
+## 11. Child-safety design
 
 **Included:** XP, gems, badges, Knowledge Tree growth, world unlocking,
 celebration animations, encouraging feedback, and hints instead of failure.
@@ -377,7 +462,7 @@ passages via the device's speech synthesiser.
 
 ---
 
-## 11. Packaging it as an iOS / iPadOS app
+## 12. Packaging it as an iOS / iPadOS app
 
 ### Option A — Home Screen web app (zero work, available today)
 Safari → **Share → Add to Home Screen**. Full-screen, offline-capable once
@@ -452,7 +537,7 @@ them as-is and rebuild only the rendering layer.
 
 ---
 
-## 12. Performance notes
+## 13. Performance notes
 
 No frameworks, no bundler, no fonts to download, no images to fetch. All art —
 including the eleven story illustrations — is SVG, CSS gradients and emoji; all
@@ -464,7 +549,7 @@ and every one of them is disabled under `prefers-reduced-motion` or the in-game
 
 ---
 
-## 13. Roadmap
+## 14. Roadmap
 
 - 🚀 **WonderSpace** — the sixth world, unlocked when all five crystals are
   restored. It currently shows a completion message; the registration pattern in
