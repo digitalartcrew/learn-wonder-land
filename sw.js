@@ -24,17 +24,27 @@
    BUMP `VERSION` on every deploy. Old caches are deleted on
    activate, which is what makes updates reliable.
    ============================================================= */
-const VERSION = 'ww-v2';
+const VERSION = 'ww-v3';
 
 /* Canonical URLs only — no .html suffixes that Pages would redirect. */
 const SHELL = [
   './',
   'privacy',
+  'terms',
   'style.css',
   'game.js',
   'js/core.js',
+  'js/env.js',
+  'js/events.js',
+  'js/entitlements.js',
+  'js/billing.js',
+  'js/profiles.js',
+  'js/sync.js',
+  'js/parentgate.js',
   'js/art.js',
   'js/screens.js',
+  'js/plus.js',
+  'js/devtools.js',
   'js/worlds/math.js',
   'js/worlds/story.js',
   'js/worlds/science.js',

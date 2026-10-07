@@ -1197,3 +1197,139 @@ body.reduce-motion #sky { display: none; }
   .slot { width: 42px; height: 52px; }
   .tile { width: 46px; height: 50px; }
 }
+
+/* ===========================================================
+   16. MONETIZATION UI
+   Free vs WonderWorld+ — the map badge, the child's friendly
+   prompt, the grown-ups plan page and the development panel.
+
+   House rules followed here:
+     • Premium state is never signalled by colour alone. Every
+       premium affordance carries a ✨ mark AND a text label.
+     • No casino gold. The existing --gold is the app's primary
+       button colour already; premium gets a restrained lilac
+       outline plus a sparkle, not a treasure chest.
+     • Every interactive element keeps the 44pt target and the
+       shared :focus-visible ring from section 1.
+   =========================================================== */
+
+/* --- map: earned, but part of WonderWorld+ ---------------- */
+.map-node.premium .node-orb {
+  border-color: rgba(255, 255, 255, .85);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .35), inset 0 -6px 14px rgba(0, 0, 0, .18),
+              0 0 0 3px rgba(187, 139, 255, .55);
+}
+.map-node.premium .node-emoji { opacity: .92; }
+.node-plus {
+  position: absolute; right: -6px; bottom: -4px;
+  font-size: 20px; filter: drop-shadow(0 2px 4px #0008);
+}
+
+/* --- child-facing premium prompt (never any price here) --- */
+.premium-prompt { text-align: center; }
+.premium-emoji {
+  font-size: clamp(46px, 12vw, 68px);
+  line-height: 1.1; margin-bottom: 4px;
+}
+
+/* --- grown-ups: section headings ------------------------- */
+.parent-section {
+  color: #cfd7f5; margin: 26px 2px 2px;
+  font-size: 1.02em; letter-spacing: .3px;
+}
+.parent-section:first-child { margin-top: 4px; }
+
+/* --- the ✨ mark used wherever Plus is named -------------- */
+.plus-mark { margin-right: 7px; }
+.plan-tag { display: inline-flex; margin: 6px 0 0; }
+
+.plus-entry, .plus-teaser, .plus-status, .plus-pitch, .plus-pricing {
+  border: 2px solid rgba(187, 139, 255, .55);
+}
+.plus-entry h3, .plus-teaser h3, .plus-status h3 { margin-top: 0; }
+
+/* --- what WonderWorld+ includes -------------------------- */
+.plus-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.plus-list li {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid var(--line);
+}
+.plus-list li:last-child { border-bottom: 0; }
+.plus-ico { font-size: 26px; line-height: 1.1; }
+.plus-list b { display: block; color: var(--ink); }
+.plus-list small { display: block; color: var(--ink-soft); font-size: .85em; }
+
+/* --- pricing (the only place in the app with a price) ---- */
+.plan-card {
+  background: var(--panel-2); border: 2px solid var(--line);
+  border-radius: var(--radius-sm); padding: 16px; margin-top: 12px;
+  text-align: center;
+}
+.plan-card.recommended { border-color: var(--grape); border-width: 3px; }
+.plan-badge {
+  display: inline-block; margin-bottom: 8px;
+  background: var(--grape); color: #fff;
+  border-radius: 999px; padding: 4px 14px;
+  font-size: .72em; font-weight: 900; letter-spacing: .09em;
+}
+.plan-headline { margin: 0 0 2px; font-size: 1.3em; font-weight: 900; color: var(--ink); }
+.plan-price { margin: 0; font-size: 1.1em; font-weight: 800; color: var(--ink); }
+.plan-sub { margin: 2px 0 0; color: var(--ink-soft); font-size: .88em; }
+.plan-fine { margin: 8px 0 0; color: var(--ink-soft); font-size: .82em; }
+.cancel-note { text-align: center; margin-top: 14px; font-weight: 700; }
+.plus-unavailable {
+  margin: 14px 0 0; padding: 12px 14px; border-radius: var(--radius-sm);
+  background: var(--nudge-bg); color: var(--nudge); font-weight: 700; font-size: .88em;
+}
+
+/* --- trust ------------------------------------------------ */
+.trust-card { border: 2px solid var(--good); }
+.trust-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.trust-list li {
+  display: flex; gap: 10px; align-items: center;
+  padding: 7px 0; color: var(--ink); font-weight: 700;
+}
+.trust-tick {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--good-bg); color: var(--good); font-weight: 900;
+}
+
+/* --- legal links ------------------------------------------ */
+.legal-links { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.legal-links .ghost-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 120px; text-decoration: none;
+}
+
+/* --- advanced report rows --------------------------------- */
+.report-head { display: block; color: var(--ink); margin-bottom: 2px; }
+.report-line { margin: 4px 0; color: var(--ink); font-weight: 700; }
+.report-facts { margin: 4px 0 0; font-size: .9em; }
+
+/* --- the stricter parental gate --------------------------- */
+.gate-instruction {
+  background: var(--panel-2); border-radius: var(--radius-sm);
+  padding: 12px 14px; margin: 10px 0 2px;
+  color: var(--ink); font-weight: 700; text-align: left;
+}
+
+/* --- development-only panel ------------------------------- */
+.dev-card { border: 3px dashed var(--nudge); }
+.dev-note {
+  background: var(--nudge-bg); color: var(--nudge);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+  font-size: .85em; font-weight: 800; margin: 10px 0;
+}
+.dev-tiers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.dev-chip {
+  min-height: 44px; min-width: 76px; justify-content: center;
+  border: 2px solid var(--line); background: var(--panel-2);
+  color: var(--ink-soft); font-size: .9em; cursor: pointer;
+}
+
+/* On a wider screen the two plans sit side by side. */
+@media (min-width: 560px) {
+  .plus-pricing .plan-card { text-align: center; }
+  .legal-links .ghost-btn { flex: 0 1 auto; }
+}

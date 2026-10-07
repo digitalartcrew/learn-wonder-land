@@ -133,19 +133,33 @@ window.WW = window.WW || {};
       { name: 'Sunset', top: '#ff8a5c', trim: '#e0542a' }
     ],
 
-    /* Worlds. unlockXP = total XP needed. Education is never paywalled. */
+    /* Worlds.
+         unlockXP        total XP needed — the LEARNING requirement.
+         requiresCrystals  all five crystals instead of an XP number.
+         tier            'free' or 'plus' — the SUBSCRIPTION requirement.
+
+       These two are independent and BOTH must be satisfied; see
+       js/entitlements.js. The whole five-crystal adventure is
+       tier:'free' and stays that way — education is never paywalled.
+       A future world declares its tier here and needs no other change. */
     worlds: [
       { id: 'math', name: 'Math Island', emoji: '🧮', color: '#45c8ff', unlockXP: 0,
+        tier: 'free', slug: 'math-island',
         subject: 'Math', blurb: 'Build the rainbow bridge with number power.' },
       { id: 'story', name: 'Story Forest', emoji: '📚', color: '#63d68d', unlockXP: 0,
+        tier: 'free', slug: 'story-forest',
         subject: 'Reading', blurb: 'Read, spell and help Luna find the missing star.' },
       { id: 'science', name: 'Science Lab', emoji: '🧪', color: '#bb8bff', unlockXP: 150,
+        tier: 'free', slug: 'science-lab',
         subject: 'Science', blurb: 'Grow plants, test magnets, make the weather.' },
       { id: 'city', name: 'Planet City', emoji: '🌎', color: '#4fd6b8', unlockXP: 400,
+        tier: 'free', slug: 'planet-city',
         subject: 'Our Planet', blurb: 'Build a green city that people love.' },
       { id: 'business', name: 'Business Town', emoji: '💰', color: '#ffc93c', unlockXP: 700,
+        tier: 'free', slug: 'business-town',
         subject: 'Money', blurb: 'Run a lemonade stand and learn about profit.' },
       { id: 'space', name: 'WonderSpace', emoji: '🚀', color: '#ff8ad1', unlockXP: null,
+        tier: 'plus', slug: 'wonder-space',
         subject: 'Space', blurb: 'Opens when all 5 crystals are restored.', requiresCrystals: true }
     ],
 
@@ -440,6 +454,22 @@ window.WW = window.WW || {};
      =========================================================== */
   var SAVE_KEY = 'wonderworld.save.v1';
 
+  /* Which key this Explorer's progress lives under.
+     Explorer 1 — every player who exists today — keeps SAVE_KEY exactly.
+     js/profiles.js only ever POINTS AT it; it never moves or rewrites it.
+     If that module is missing or throws, we fall back to the key the game
+     has always used, so a save can never be stranded. */
+  function saveKey() {
+    try {
+      var p = WW.profiles;
+      if (p && typeof p.activeSaveKey === 'function') {
+        var k = p.activeSaveKey();
+        if (typeof k === 'string' && k) return k;
+      }
+    } catch (e) { /* fall through */ }
+    return SAVE_KEY;
+  }
+
   var State = WW.State = {
     data: null,
     _timer: null,
@@ -471,7 +501,7 @@ window.WW = window.WW || {};
 
     load: function () {
       var raw = null;
-      try { raw = window.localStorage.getItem(SAVE_KEY); } catch (e) { raw = null; }
+      try { raw = window.localStorage.getItem(saveKey()); } catch (e) { raw = null; }
       var base = this.defaults();
       if (raw) {
         try { base = U.merge(base, JSON.parse(raw)); } catch (e) { /* corrupt save → fresh start */ }
@@ -482,8 +512,11 @@ window.WW = window.WW || {};
     },
 
     hasSave: function () {
-      try { return !!window.localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+      try { return !!window.localStorage.getItem(saveKey()); } catch (e) { return false; }
     },
+
+    /* Exposed so the grown-ups area and the tests can say which key is live. */
+    saveKey: saveKey,
 
     /* Debounced so rapid taps don't thrash storage */
     save: function (immediate) {
@@ -492,14 +525,14 @@ window.WW = window.WW || {};
       var write = function () {
         try {
           self.data.stats.lastPlayed = Date.now();
-          window.localStorage.setItem(SAVE_KEY, JSON.stringify(self.data));
+          window.localStorage.setItem(saveKey(), JSON.stringify(self.data));
         } catch (e) { /* private mode / full disk — game still playable this session */ }
       };
       if (immediate) write(); else this._timer = setTimeout(write, 400);
     },
 
     wipe: function () {
-      try { window.localStorage.removeItem(SAVE_KEY); } catch (e) {}
+      try { window.localStorage.removeItem(saveKey()); } catch (e) {}
       this.data = this.defaults();
     },
 
@@ -617,7 +650,11 @@ window.WW = window.WW || {};
         stars: info.stars === undefined ? null : info.stars,
         xp: info.xp || 0, at: Date.now()
       });
-      if (State.data.activities.length > 60) State.data.activities.length = 60;
+      /* 60 is exactly what the game has always kept, so free players lose
+         nothing; WonderWorld+ keeps a longer history for the parent report. */
+      var cap = (WW.entitlements && WW.entitlements.historyLimit)
+        ? WW.entitlements.historyLimit() : 60;
+      if (State.data.activities.length > cap) State.data.activities.length = cap;
       this.badge('first_step');
       State.save();
     },
@@ -826,12 +863,19 @@ window.WW = window.WW || {};
      =========================================================== */
   var Modal = WW.Modal = {
     _onClose: null,
+    /* close() hides the layer on a 220ms timer so the fade can play. If a new
+       modal is opened inside a close handler — "Ask a Grown-Up" closes the
+       child's prompt and immediately opens the adult check — that pending
+       timer would hide the NEW modal a moment after it appeared. So opening
+       always cancels a hide that has not happened yet. */
+    _hideTimer: null,
     open: function (o) {
       var layer = document.getElementById('modal-layer');
       var title = document.getElementById('modal-title');
       var body = document.getElementById('modal-body');
       var actions = document.getElementById('modal-actions');
       if (!layer) return;
+      if (this._hideTimer) { clearTimeout(this._hideTimer); this._hideTimer = null; }
       title.textContent = o.title || '';
       title.hidden = !o.title;
       body.innerHTML = '';
@@ -858,7 +902,11 @@ window.WW = window.WW || {};
       var layer = document.getElementById('modal-layer');
       if (!layer || layer.hidden) return;
       layer.classList.remove('show');
-      setTimeout(function () { layer.hidden = true; }, 220);
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      this._hideTimer = setTimeout(function () {
+        Modal._hideTimer = null;
+        layer.hidden = true;
+      }, 220);
       if (this._onClose) { var f = this._onClose; this._onClose = null; f(); }
     },
     isOpen: function () {
@@ -1089,7 +1137,13 @@ window.WW = window.WW || {};
   /* ===========================================================
      11. NAVIGATION / SCREEN ROUTER
      =========================================================== */
+  /* Screens meant for a grown-up. The HUD, the companion and the play clock
+     all stay away from these, and walking out of the area re-locks it. */
+  var ADULT_SCREENS = ['parent', 'plus'];
+  function isAdultScreen(name) { return ADULT_SCREENS.indexOf(name) !== -1; }
+
   var Nav = WW.Nav = {
+    ADULT_SCREENS: ADULT_SCREENS,
     current: null,
     history: [],
 
@@ -1112,12 +1166,14 @@ window.WW = window.WW || {};
       var prev = this.current;
       this.current = name;
       /* Walking out of the grown-ups area closes it again, so a child who
-         picks the device up afterwards still meets the gate. */
-      if (prev === 'parent' && name !== 'parent' && WW.Screens.parent) {
-        WW.Screens.parent.lock();
+         picks the device up afterwards still meets the gate. Moving between
+         the dashboard and the WonderWorld+ page stays inside the area. */
+      if (isAdultScreen(prev) && !isAdultScreen(name)) {
+        if (WW.Screens.parent) WW.Screens.parent.lock();
+        if (WW.parentGate) WW.parentGate.reset();
       }
 
-      var chrome = (name !== 'title' && name !== 'create' && name !== 'parent');
+      var chrome = (name !== 'title' && name !== 'create' && !isAdultScreen(name));
       HUD.show(chrome && State.data.hasCharacter);
       Buddy.show(chrome && State.data.hasCharacter);
       document.body.dataset.screen = name;
@@ -1144,7 +1200,8 @@ window.WW = window.WW || {};
     last: 0,
     tick: null,
     onScreen: function (name) {
-      var playing = (name !== 'title' && name !== 'parent');
+      /* Time spent in the grown-ups area is not learning time. */
+      var playing = (name !== 'title' && !isAdultScreen(name));
       if (playing) this.start(); else this.stop();
     },
     start: function () {
@@ -1364,6 +1421,14 @@ window.WW = window.WW || {};
         var w = WW.Worlds[id];
         if (w && w.back) w.back(); else Nav.go(id === 'parent' ? 'title' : 'map');
       });
+    });
+
+    /* The WonderWorld+ page sits inside the grown-ups area, so back goes to
+       the dashboard rather than out to the game. */
+    var plusBack = document.getElementById('plus-back');
+    if (plusBack) plusBack.addEventListener('click', function () {
+      Sound.play('tap');
+      Nav.go('parent');
     });
 
     document.getElementById('modal-backdrop').addEventListener('click', function () {

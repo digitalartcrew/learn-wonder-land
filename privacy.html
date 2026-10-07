@@ -169,6 +169,34 @@
       contact us and we will delete it immediately.
     </p>
 
+    <h2>WonderWorld+ subscriptions</h2>
+    <p>
+      WonderWorld+ is an optional subscription for grown-ups. It is not on sale yet — the
+      screens exist in the app but no payment can be taken — and this section describes how
+      it is built so that it is true from the first day it is.
+    </p>
+    <ul>
+      <li>The subscription state is stored on the device in its own key,
+          <code>wonderworld.entitlement.v1</code>, completely separate from your child's save
+          file. Nothing about a subscription is ever written into a child's progress, and
+          nothing about a child's progress is ever read by the subscription code.</li>
+      <li>When it goes on sale, the payment is handled entirely by the app store. We never
+          see or store a card number. Your store account is not linked to anything in the
+          game.</li>
+      <li>A parent's email address, if you give us one on the mailing-list form, stays in the
+          separate list described above. It is not joined up with a subscription, with a
+          device, or with anything a child does.</li>
+      <li>Subscription controls sit behind an adult check, and nothing in the child's game
+          shows a price or asks for money.</li>
+    </ul>
+    <p>
+      The app also keeps a small in-memory list of product events — things like "the
+      WonderWorld+ page was opened" — purely so the app can behave sensibly during a session.
+      It never contains a child's nickname or anything they did in a learning activity, it is
+      never written to disk, and it is <strong>not sent anywhere</strong>. If that ever
+      changes, this page is updated before the change ships.
+    </p>
+
     <h2>Hosting and server logs</h2>
     <p>
       The site is hosted on Cloudflare Pages. Like every web host, Cloudflare automatically

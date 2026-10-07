@@ -1,8 +1,13 @@
 # 🌳 WonderWorld — A Magical Learning Adventure
 
 An educational adventure game for children roughly **ages 5–12**, built in plain
-HTML5, CSS3 and vanilla JavaScript. No build step, no server, no database, no
-accounts, no network calls, no ads and no purchases.
+HTML5, CSS3 and vanilla JavaScript. No build step, no database, no accounts, no
+ads, no tracking.
+
+The complete five-crystal adventure is **free**, and worlds open by learning
+rather than by paying. An optional subscription, **WonderWorld+**, adds content
+on top of it — see [§9 Monetization architecture](#9-monetization-architecture).
+It is not on sale yet: no billing provider is connected.
 
 > The ancient **Knowledge Tree** has lost its power. Five Knowledge Crystals are
 > scattered across WonderWorld. Explore five worlds, learn, and bring them home.
@@ -69,15 +74,24 @@ activate, `Esc` to close a dialog. Focus rings are high-contrast gold.
 ```
 WonderWorld/
 ├── index.html                 screen shells + script loading order
-├── style.css                  all styling, 15 labelled sections
+├── style.css                  all styling, 16 labelled sections
 ├── game.js                    entry point — boots everything
 ├── js/
 │   ├── core.js                engine: utilities, game data, audio, save/load,
 │   │                          player state, progression, rewards, FX, avatar
 │   │                          art, companion, HUD, screen router, settings
+│   ├── env.js                 development vs production (gates the dev mock)
+│   ├── events.js              first-party-only event interface (no network)
+│   ├── entitlements.js        content tiers + free / WonderWorld+ access
+│   ├── billing.js             WW.billing facade + mock/apple/web adapters
+│   ├── profiles.js            Explorer roster + the save-key seam
+│   ├── sync.js                cloud-backup interface (no backend yet)
+│   ├── parentgate.js          the one reusable adult check
 │   ├── art.js                 hand-drawn SVG illustrations for the story
 │   ├── screens.js             title, character creator, world map,
 │   │                          Knowledge Tree, profile, parent dashboard
+│   ├── plus.js                child premium prompt + grown-ups WonderWorld+ page
+│   ├── devtools.js            development-only tier simulator
 │   └── worlds/
 │       ├── math.js            Math Island — adaptive question engine + bridge
 │       ├── story.js           Story Forest — interactive story + reading games
@@ -85,6 +99,7 @@ WonderWorld/
 │       ├── city.js            Planet City — sustainable city builder
 │       └── business.js        Business Town — lemonade stand simulation
 ├── privacy.html               privacy policy (linked from the signup form)
+├── terms.html                 terms of use (linked from the WonderWorld+ page)
 ├── 404.html                   disables Cloudflare's SPA fallback
 ├── sw.js                      service worker — offline play
 ├── _headers                   Cloudflare Pages security + caching headers
@@ -100,6 +115,8 @@ WonderWorld/
 ├── tools/
 │   ├── logic-test.js          headless game-logic tests (node)
 │   └── browser-test.js        full automated playthrough (headless browser)
+├── docs/
+│   └── MONETIZATION.md        free vs Plus, billing, StoreKit integration path
 └── README.md
 ```
 
@@ -121,10 +138,23 @@ WW.Nav        // screen router
 WW.UI         // shared builders: cards, meters, steppers, buttons
 WW.Screens    // non-world screens
 WW.Worlds     // one module per world
+
+// --- monetization layer (see §9) ---
+WW.env           // isDev() / isProductionHost() — gates the development mock
+WW.events        // first-party event buffer; nothing is transmitted
+WW.Content       // content registry: tiers, slugs, the WonderWorld+ catalogue
+WW.entitlements  // isPlus(), canAccess(), hasFeature(), check()
+WW.billing       // startTrial/purchase/restorePurchases/manageSubscription
+WW.profiles      // Explorer roster, slot limits, activeSaveKey()
+WW.sync          // push/pull/status — interface only, no backend
+WW.parentGate    // the reusable adult check
+WW.Premium       // the child-facing "ask a grown-up" prompt
+WW.dev           // tier simulator — inert outside development
 ```
 
 No module reaches into another's internals — worlds only talk to
-`WW.Progress`, `WW.State` and `WW.UI`. That's what keeps a port to Unity/Godot
+`WW.Progress`, `WW.State` and `WW.UI`, and nothing anywhere talks to a store
+SDK except `WW.billing`. That's what keeps a port to Unity/Godot
 or a native rewrite tractable.
 
 ---
@@ -136,7 +166,23 @@ or a native rewrite tractable.
 | **Where** | `localStorage`, key `wonderworld.save.v1` |
 | **What** | One JSON object: character, XP, level, gems, crystals, unlocked worlds, per-world state, badges, activity log, play-time stats, settings |
 | **When** | Debounced ~400 ms after any change; immediately on level-up, crystal restoration, tab hide and page unload |
-| **Leaves the device?** | Never. There is no network code anywhere in the project |
+| **Leaves the device?** | Never. The only network call in the client is the parent mailing-list signup, which carries nothing from the save |
+
+### Other localStorage keys
+
+Both are kept **outside** the save on purpose, so a subscription can never
+corrupt a game in progress and a child's progress is never mixed up with a
+grown-up's billing state.
+
+| Key | Written by | Holds |
+|---|---|---|
+| `wonderworld.save.v1` | `js/core.js` | the Explorer's game, unchanged since v1 |
+| `wonderworld.entitlement.v1` | `js/entitlements.js` | subscription status, product, provider, trial dates |
+| `wonderworld.profiles.v1` | `js/profiles.js` | the Explorer roster; Explorer 1 *points at* the key above |
+
+`WW.State` resolves its key through `WW.profiles.activeSaveKey()`, which returns
+`wonderworld.save.v1` for Explorer 1 and falls back to that same key if the
+profiles module is missing or throws. Existing saves are never moved or copied.
 
 ### Forward compatibility
 `WW.State.load()` deep-merges the stored object onto a fresh `defaults()`
@@ -298,20 +344,20 @@ npm i playwright-core            # then point PW/CHROME_PATH at a Chromium
 node tools/browser-test.js http://127.0.0.1:8111
 ```
 
-**`logic-test.js` (66 checks)** verifies save/load round-trips and
+**`logic-test.js` (183 checks)** verifies save/load round-trips and
 forward-compatible merging, level curves, unlock thresholds, crystal
 restoration, 50 000 generated maths questions (answer always present, no
 duplicate options, arithmetic actually correct), story content integrity, that
 all six weather types are reachable, that a well-planned green city can meet all
 five goals within budget, that the lemonade economics behave (hot sells more
 than wet, high price lowers demand, profit = revenue − costs), and that the
-codebase contains no network calls, no remote scripts, no monetisation and no
-timer gating. It also checks that every story passage has its own illustration,
+codebase contains no third-party network calls, no remote scripts, no gambling
+mechanics and no timer gating. It also checks that every story passage has its own illustration,
 that each one renders valid SVG with a screen-reader description and references
 no external files, and that the celebration audio degrades safely when there is
 no AudioContext.
 
-**`browser-test.js` (109 checks)** plays the game: creates a character, crosses
+**`browser-test.js` (184 checks)** plays the game: creates a character, crosses
 the bridge, deliberately answers wrong to confirm hints appear and nothing
 "fails" the child, reads a whole story chapter including spelling and sentence
 building, runs the plant/magnet/weather experiments, builds a city and watches
@@ -321,6 +367,30 @@ profit, reloads to confirm persistence, audits every visible button for the
 cheer package fires on every celebration and that the voice can be muted
 independently, and repeats key screens at iPhone, iPad-portrait and
 iPad-landscape sizes with big-text mode on. Screenshots land in `.shots/`.
+
+### What the monetization tests assert
+
+Both suites were extended rather than replaced; every pre-existing check still
+runs. The additions pin down the promises in §9:
+
+| Promise | Where it is tested |
+|---|---|
+| Existing saves still load, untouched by any of this | logic §15, browser "Saves, offline and privacy" |
+| The five worlds stay free and open on XP alone | logic §10 |
+| Paying never bypasses a learning requirement | logic §11, browser "Paying never skips the learning" |
+| A free player cannot reach Plus content | logic §10 |
+| A Plus player can, once the learning is done | logic §12 |
+| WonderSpace needs five crystals **and** Plus (all four combinations) | logic §12 |
+| A forged `unlocked.space` flag does not help | logic §12 |
+| The parental gate protects the purchase UI, including direct navigation | logic §17/§18, browser "the gate cannot be walked around" |
+| The child-facing prompt contains no price and no purchase wording | logic §18, browser "what a child sees" |
+| The grown-ups page contains the prices, the trial and "Cancel anytime." | browser "the grown-ups page" |
+| Simulating free/trial/plus/expired works in development | logic §13/§14, browser "simulating the paid state" |
+| **Production cannot be granted Plus by the mock adapter** | logic §14 |
+| A Restore Purchases interface exists | logic §13 |
+| Offline shell covers every new script; service worker unchanged in behaviour | logic §20 |
+| No new network requests — nothing left the origin during the browser run | logic §21, browser "Saves, offline and privacy" |
+| Reduced motion, big text and 44 pt targets hold on the new screens | browser, throughout |
 
 ---
 
@@ -399,7 +469,179 @@ build output directory to `public`.
 
 ---
 
-## 9. Sound and celebrations
+## 9. Monetization architecture
+
+Full detail, including the StoreKit integration steps, is in
+**[docs/MONETIZATION.md](docs/MONETIZATION.md)**. This section is the summary.
+
+### Free vs WonderWorld+
+
+The free game is the whole game that exists today, and it stays that way.
+
+| | Free | WonderWorld+ |
+|---|---|---|
+| Character creation and companions | ✅ | ✅ |
+| Math Island, Story Forest, Science Lab, Planet City, Business Town | ✅ | ✅ |
+| All five Knowledge Crystals and the complete Knowledge Tree quest | ✅ | ✅ |
+| XP, gems, levels, badges | ✅ | ✅ |
+| One Explorer, saved locally | ✅ | up to 4 |
+| Progress summary for grown-ups | ✅ | plus the advanced report |
+| Activity history kept | 60 | 400 |
+| Accessibility, audio, read-aloud | ✅ | ✅ |
+| WonderSpace and future premium worlds | — | ✅ |
+| Extra story chapters and Math modes | — | ✅ |
+| Progress backup / cloud sync | — | ✅ (interface only so far) |
+| Extra Explorer customisation | — | ✅ (never sold separately) |
+
+Prices prepared in the UI: **$39.99/year** (recommended, 7-day free trial, shown
+as about $3.33/month) and **$6.99/month**. Nothing can be bought yet — no
+provider is connected.
+
+### Two axes: learning and tier
+
+Every piece of content has a **learning** requirement (XP or crystals) and a
+**tier** (`free` / `plus`). Both must pass, and learning is always checked and
+reported first.
+
+```
+WonderSpace  =  all five crystals  AND  WonderWorld+
+```
+
+A subscriber with zero crystals cannot open WonderSpace. There is a test for
+exactly that, and a second one proving a forged `unlocked.space` flag does not
+help either.
+
+### Marking content free or plus
+
+Add `tier` to the world's entry in `WW.Data.worlds` (`js/core.js`). That is the
+whole job — the map, the entitlement check and the child-facing prompt all read
+it. Its learning requirement stays where it already is (`unlockXP` or
+`requiresCrystals`), so there is one source of truth.
+
+```js
+{ id: 'ocean', name: 'Ocean Deep', emoji: '🐙', unlockXP: 900,
+  tier: 'plus', slug: 'ocean-deep', subject: 'Biology', blurb: '…' }
+```
+
+Non-world capabilities go in `FEATURES` in `js/entitlements.js`.
+
+### The modules
+
+| File | Responsibility |
+|---|---|
+| `js/env.js` | Is this development or production? Hard-stops on `PRODUCTION_HOSTS`. |
+| `js/events.js` | First-party-only event interface. Allow-listed props, no network. |
+| `js/entitlements.js` | Content registry + `isPlus()`, `canAccess()`, `hasFeature()`. |
+| `js/billing.js` | `WW.billing` facade and the `mock` / `apple` / `web` adapters. |
+| `js/profiles.js` | Explorer roster and the save-key seam. |
+| `js/sync.js` | Cloud-backup interface. No backend; reports so honestly. |
+| `js/parentgate.js` | One reusable adult check, used by every adult-only door. |
+| `js/plus.js` | `WW.Premium` (child prompt) and `WW.Screens.plus` (grown-ups page). |
+| `js/devtools.js` | Development-only tier simulator. |
+
+### Entitlement API
+
+```js
+WW.entitlements.isPlus()                            // free/expired → false
+WW.entitlements.status()                            // 'free' | 'trial' | 'plus' | 'expired'
+WW.entitlements.canAccess('math-island')            // true for everyone who earned it
+WW.entitlements.canAccess('wonder-space')           // crystals AND Plus
+WW.entitlements.hasFeature('multi-profile')
+WW.entitlements.hasFeature('advanced-parent-reports')
+WW.entitlements.hasFeature('cloud-sync')
+WW.entitlements.check('wonder-space')               // { allowed, blockedBy: 'learning'|'plus', … }
+```
+
+`check()` is what UI should use — `blockedBy` is the difference between showing
+a child a learning message and showing them the premium prompt.
+
+### Billing abstraction
+
+Application code calls `WW.billing`, never a store SDK:
+
+```js
+WW.billing.startTrial('plus_annual')
+WW.billing.purchase('plus_monthly')
+WW.billing.restorePurchases()
+WW.billing.manageSubscription()
+WW.billing.verify()
+```
+
+Three adapters. `mock` is implemented for development; `apple` and `web` are
+documented stubs that resolve `{ ok: false, reason: 'not_connected' }`. There is
+no fake production purchase path anywhere — if billing is not connected, the UI
+says so.
+
+### Trial and subscription state
+
+Stored in its own key, `wonderworld.entitlement.v1`, **never** inside the
+child's save:
+
+```js
+{ status, productId, provider, trialStartedAt, trialEndsAt,
+  renewsAt, entitlementVerifiedAt, updatedAt }
+```
+
+A record is only honoured if `provider` is `apple` or `web`. A `mock` record is
+honoured **only** in development, so one copied onto a production host reads as
+`free`. An elapsed `trialEndsAt` downgrades to `expired` by itself.
+
+### Parental gate
+
+`WW.parentGate` is the single implementation. Two challenges, both typed rather
+than tapped and both above the 12 × 12 the game itself teaches:
+
+- `'multiply'` — `17 × 23 = ?`. The Grown-Ups dashboard, unchanged behaviour.
+- `'multiply-adjust'` — read a sentence, multiply, then subtract. Used in front
+  of anything involving money.
+
+Passes are scoped (`dashboard`, `purchase`) and expire after five minutes.
+Leaving the grown-ups area closes every door.
+
+### Multiple Explorers
+
+`wonderworld.save.v1` is **not** migrated. The roster in
+`wonderworld.profiles.v1` points Explorer 1 at that exact key; additional
+Explorers get `wonderworld.save.v1.explorer-N`. If `js/profiles.js` disappeared,
+`js/core.js` falls back to the same key and every save still loads. The roster,
+slot accounting and switch logic exist; the child-facing "who is playing?"
+screen does not, so the UI lists the roster read-only.
+
+### Cloud backup
+
+`WW.sync.push() / .pull() / .status()` exist as an interface with a `none`
+provider. Nothing is uploaded, local play is unaffected, and the grown-ups area
+says plainly that backup is still being built.
+
+### Privacy
+
+No analytics SDK, no ad SDK, no tracking, no social login. `WW.events` buffers
+in memory only, drops every property not on its allow-list, and redacts any
+value matching the child's nickname. The parent's email stays in Cloudflare KV,
+entirely separate from both the game save and the entitlement record. The
+client still makes exactly **one** network call — the parent mailing-list
+signup — and there is a test asserting it.
+
+### Simulating free / trial / plus / expired
+
+Only on a development host (`file://`, `localhost`, a `.local` or private-LAN
+address, or `window.WW_DEV = true` — and never on a host in
+`WW.env.PRODUCTION_HOSTS`):
+
+```js
+WW.dev.setTier('free')
+WW.dev.setTier('trial')     // 7 days, counts as Plus
+WW.dev.setTier('plus')
+WW.dev.setTier('expired')
+WW.dev.state()              // what the environment thinks is going on
+```
+
+Or use the **Developer tools** card at the bottom of the Grown-Ups dashboard,
+which only renders in development.
+
+---
+
+## 10. Sound and celebrations
 
 All audio is generated at runtime — there are no sound files to download.
 
@@ -422,7 +664,7 @@ Two independent switches in **Settings**:
 - **Cheering voice** — turns off only the spoken praise, keeping the chimes and
   applause, for families who find text-to-speech distracting
 
-## 10. What it teaches
+## 11. What it teaches
 
 | World | Skills |
 |---|---|
@@ -439,18 +681,26 @@ from the child's game and needs no login.
 
 ---
 
-## 11. Child-safety design
+## 12. Child-safety design
 
 **Included:** XP, gems, badges, Knowledge Tree growth, world unlocking,
 celebration animations, encouraging feedback, and hints instead of failure.
 
 **Deliberately excluded:** loot boxes, gambling, randomised or paid rewards,
-in-app purchases, advertising, manipulative timers, FOMO, fake scarcity,
-energy/lives systems, autoplay, push notifications, leaderboards, chat, social
-features, analytics, and any collection of personal information.
+consumable purchases of any kind, advertising, manipulative timers, FOMO, fake
+scarcity, energy/lives systems, autoplay, push notifications, leaderboards,
+chat, social features, analytics, and any collection of personal information
+from children.
 
-Educational content is **never** locked behind payment — worlds unlock purely
-through learning. A wrong answer produces a hint and a second try; after a
+**On the optional subscription.** WonderWorld+ sells *more content*, never an
+advantage. XP, gems, crystals, answers and hints are not and will not be for
+sale, and no purchase can satisfy a learning requirement — `WW.entitlements`
+checks learning first and reports it first, and the test suite enforces it. The
+child never sees a price: reaching premium content shows a friendly "ask a
+grown-up" message, and every price sits behind a parental gate. See §9.
+
+The five-world, five-crystal adventure is **never** locked behind payment — its
+worlds unlock purely through learning, and always will. A wrong answer produces a hint and a second try; after a
 second miss the game shows the answer and lets the child tap it, so no one ever
 gets stuck or shamed.
 
@@ -462,7 +712,7 @@ passages via the device's speech synthesiser.
 
 ---
 
-## 12. Packaging it as an iOS / iPadOS app
+## 13. Packaging it as an iOS / iPadOS app
 
 ### Option A — Home Screen web app (zero work, available today)
 Safari → **Share → Add to Home Screen**. Full-screen, offline-capable once
@@ -537,7 +787,7 @@ them as-is and rebuild only the rendering layer.
 
 ---
 
-## 13. Performance notes
+## 14. Performance notes
 
 No frameworks, no bundler, no fonts to download, no images to fetch. All art —
 including the eleven story illustrations — is SVG, CSS gradients and emoji; all
@@ -549,13 +799,19 @@ and every one of them is disabled under `prefers-reduced-motion` or the in-game
 
 ---
 
-## 14. Roadmap
+## 15. Roadmap
 
-- 🚀 **WonderSpace** — the sixth world, unlocked when all five crystals are
-  restored. It currently shows a completion message; the registration pattern in
-  §6 is how it gets built.
-- A gem shop for cosmetic items: outfits, companion accessories and tree
-  decorations (cosmetic only, earned by learning — never purchasable).
-- More story chapters and a second maths game mode.
-- Offline Service Worker for true offline play as an installed web app.
+- 🚀 **WonderSpace** — the sixth world. Already declared `tier: 'plus'` and
+  gated on all five crystals, but the world itself is not built: it still shows
+  a "coming in the next update" message. The registration pattern in §6 is how
+  it gets built.
+- A cosmetic gem shop: outfits, companion accessories and tree decorations.
+  Bought with gems that are **earned by learning** — gems are never sold.
+- More story chapters and a second maths game mode (both `tier: 'plus'`).
+- The "who is playing?" screen that turns the Explorer roster in §9 into a real
+  multi-child switcher.
+- A first-party backup service behind `WW.sync`, with the privacy review and
+  policy update that has to come first.
+- Connecting Apple StoreKit — step-by-step in
+  [docs/MONETIZATION.md](docs/MONETIZATION.md).
 # learn-wonder-land

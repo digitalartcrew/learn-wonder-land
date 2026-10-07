@@ -175,6 +175,17 @@
     <div class="world-body" id="parent-body"></div>
   </section>
 
+  <!-- ======================= WONDERWORLD+ (grown-ups only) =======================
+       The only screen in the game that may contain a price. It sits inside the
+       grown-ups area and renders its own parental gate before anything else. -->
+  <section class="screen parent-screen" id="screen-plus" aria-label="WonderWorld Plus">
+    <header class="world-bar parent">
+      <button class="icon-btn" id="plus-back" aria-label="Back to the grown-ups dashboard"><span aria-hidden="true">←</span></button>
+      <h2><span aria-hidden="true">✨</span> WonderWorld+</h2><div class="bar-space"></div>
+    </header>
+    <div class="world-body" id="plus-body"></div>
+  </section>
+
 </main>
 
 <!-- Floating companion buddy -->
@@ -195,13 +206,24 @@
 </div>
 
 <script src="js/core.js"></script>
+<!-- monetization layer: environment → events → entitlements → billing →
+     profiles/sync → parental gate. Nothing here talks to the network. -->
+<script src="js/env.js"></script>
+<script src="js/events.js"></script>
+<script src="js/entitlements.js"></script>
+<script src="js/billing.js"></script>
+<script src="js/profiles.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/parentgate.js"></script>
 <script src="js/art.js"></script>
 <script src="js/screens.js"></script>
+<script src="js/plus.js"></script>
 <script src="js/worlds/math.js"></script>
 <script src="js/worlds/story.js"></script>
 <script src="js/worlds/science.js"></script>
 <script src="js/worlds/city.js"></script>
 <script src="js/worlds/business.js"></script>
+<script src="js/devtools.js"></script>
 <script src="game.js"></script>
 <script>
   /* Offline support. Only runs on a real server — harmless over file://. */

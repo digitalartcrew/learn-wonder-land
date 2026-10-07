@@ -175,6 +175,8 @@
       S.data.hasCharacter = true;
       S.save(true);
       WW.HUD.update();
+      /* No nickname, no avatar — just the fact that an Explorer now exists. */
+      if (isNew && WW.events) WW.events.track('explorer_created');
 
       if (isNew) {
         var c = S.companion();
@@ -205,30 +207,46 @@
       nodes.innerHTML = '';
 
       D.worlds.forEach(function (w) {
-        var unlocked = P.worldUnlocked(w.id);
+        /* Two independent axes — see js/entitlements.js.
+             learningMet  earned by playing
+             tierMet      satisfied by WonderWorld+
+           A world the child has not earned shows a padlock, exactly as it
+           always has. A world they HAVE earned but that belongs to
+           WonderWorld+ shows a sparkle instead — never a padlock, and never
+           anything that reads as "you lost". */
+        var v = WW.entitlements.check(w.id);
+        var learned = v.learningMet, entitled = v.tierMet;
         var crystal = S.data.crystals[w.id];
         var prog = S.data.worlds[w.id] ? S.data.worlds[w.id].progress : 0;
 
         /* Keep sub-labels short — long ones wrap and collide on a phone map */
-        var sub = unlocked
-          ? (crystal ? 'Crystal restored ✅' : prog + '% explored')
-          : (w.requiresCrystals ? '🔒 All 5 crystals' : '🔒 ' + w.unlockXP + ' XP');
-        var spoken = unlocked
-          ? w.name + '. ' + (crystal ? 'Crystal restored.' : prog + ' percent explored.')
-          : w.name + '. Locked. ' + (w.requiresCrystals
-              ? 'Opens when all five crystals are restored.'
-              : 'Opens at ' + w.unlockXP + ' XP.');
+        var sub, spoken;
+        if (!learned) {
+          sub = w.requiresCrystals ? '🔒 All 5 crystals' : '🔒 ' + w.unlockXP + ' XP';
+          spoken = w.name + '. Locked. ' + (w.requiresCrystals
+            ? 'Opens when all five crystals are restored.'
+            : 'Opens at ' + w.unlockXP + ' XP.');
+        } else if (!entitled) {
+          sub = '✨ WonderWorld+';
+          spoken = w.name + '. Part of WonderWorld Plus. Ask a grown-up.';
+        } else {
+          sub = crystal ? 'Crystal restored ✅' : prog + '% explored';
+          spoken = w.name + '. ' + (crystal ? 'Crystal restored.' : prog + ' percent explored.');
+        }
 
         var btn = U.el('button', {
-          class: 'map-node' + (unlocked ? '' : ' locked') + (crystal ? ' done' : ''),
+          class: 'map-node' + (learned ? '' : ' locked') +
+                 (learned && !entitled ? ' premium' : '') + (crystal ? ' done' : ''),
           'data-world': w.id,
           style: '--wc:' + w.color,
           'aria-label': spoken,
-          onclick: function () { WW.Screens.map.tap(w, unlocked); }
+          onclick: function () { WW.Screens.map.tap(w); }
         }, [
           U.el('span', { class: 'node-orb' }, [
-            U.el('span', { class: 'node-emoji', text: unlocked ? w.emoji : '🔒', 'aria-hidden': 'true' }),
-            crystal ? U.el('span', { class: 'node-crystal', text: '🔮', 'aria-hidden': 'true' }) : null
+            U.el('span', { class: 'node-emoji', text: learned ? w.emoji : '🔒', 'aria-hidden': 'true' }),
+            crystal ? U.el('span', { class: 'node-crystal', text: '🔮', 'aria-hidden': 'true' }) : null,
+            (learned && !entitled)
+              ? U.el('span', { class: 'node-plus', text: '✨', 'aria-hidden': 'true' }) : null
           ]),
           U.el('span', { class: 'node-label' }, [
             U.el('b', { text: w.name }),
@@ -274,8 +292,11 @@
       }
     },
 
-    tap: function (w, unlocked) {
-      if (!unlocked) {
+    tap: function (w) {
+      var v = WW.entitlements.check(w.id);
+
+      /* Not earned yet — the learning message, with no mention of money. */
+      if (!v.learningMet) {
         Sound.play('oops');
         var msg = w.requiresCrystals
           ? 'Restore all 5 Knowledge Crystals and WonderSpace will open! 🚀'
@@ -286,7 +307,17 @@
         });
         return;
       }
+
+      /* Earned, but part of WonderWorld+. A friendly handover, never a sale. */
+      if (!v.tierMet) {
+        if (WW.events) WW.events.track('premium_content_viewed', { world: w.id, contentId: w.id });
+        WW.Premium.childPrompt(w.id);
+        return;
+      }
+
       if (w.id === 'space') {
+        /* Earned AND entitled — but the world itself is not built yet, so we
+           say so plainly rather than opening an empty room. */
         Sound.play('reward');
         WW.Modal.open({
           title: '🚀 WonderSpace',
@@ -297,10 +328,12 @@
         });
         return;
       }
+
       Sound.play('tap');
       S.data.visited[w.id] = true;
       P.checkExplorer();
       S.save();
+      if (WW.events) WW.events.track('world_entered', { world: w.id });
       Nav.go(w.id);
     },
 
@@ -489,82 +522,110 @@
        email address as personal information, and a tick-box saying
        "I am the parent" is not verification — this is.
 
-       A two-digit multiplication, typed rather than tapped, is past
-       what this game teaches (it tops out at 12 × 12) and past what
-       most under-13s will do mentally.
+       The challenge itself now lives in WW.parentGate so that the
+       purchase flow uses exactly the same, tested implementation
+       rather than a second copy of it. This door keeps the plain
+       two-digit multiplication it has always had; the door in front
+       of money uses the stricter read-and-calculate variant.
        --------------------------------------------------------- */
     renderGate: function () {
       var self = this;
-      var body = document.getElementById('parent-body');
-      body.innerHTML = '';
-
-      var a = U.rnd(13, 29), b = U.rnd(13, 29);
-      var answer = a * b;
-
-      var input = U.el('input', {
-        type: 'text', inputmode: 'numeric', autocomplete: 'off',
-        class: 'name-input gate-input', 'aria-label': 'Answer',
-        placeholder: '?', maxlength: '4'
+      WW.parentGate.render(document.getElementById('parent-body'), {
+        kind: 'multiply',
+        scope: 'dashboard',
+        onPass: function () { self.unlocked = true; self.enter(); },
+        onCancel: function () { Nav.go('map'); }
       });
-      var status = U.el('p', { class: 'beta-status', role: 'status' });
-
-      function check() {
-        if (parseInt(input.value, 10) === answer) {
-          self.unlocked = true;
-          Sound.play('unlock');
-          self.enter();
-        } else {
-          Sound.play('oops');
-          status.textContent = 'That\'s not it. Have another go — or ask a grown-up.';
-          status.className = 'beta-status bad';
-          FX.pulse(input, 'shake');
-          input.value = '';
-          input.focus();
-        }
-      }
-      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') check(); });
-
-      var card = UI.card('gate-card', [
-        U.el('div', { class: 'gate-emoji', text: '🔒', 'aria-hidden': 'true' }),
-        U.el('h3', { text: 'Grown-ups only' }),
-        U.el('p', { class: 'muted', text:
-          'This area has settings, your child\'s progress report and an email sign-up, ' +
-          'so we check that a grown-up is here. Please answer:' }),
-        U.el('p', { class: 'gate-sum', text: a + ' × ' + b + ' = ?' }),
-        input,
-        UI.bigButton('Enter', function () { check(); }, 'primary wide'),
-        status,
-        U.el('button', {
-          class: 'ghost-btn', text: '← Back to the game',
-          onclick: function () { Sound.play('tap'); Nav.go('map'); }
-        })
-      ]);
-      body.appendChild(card);
-      setTimeout(function () { input.focus(); }, 120);
     },
 
     enter: function () {
       if (!this.unlocked) { this.renderGate(); return; }
+      if (WW.events) WW.events.track('parent_dashboard_viewed', { status: WW.entitlements.status() });
+
       var body = document.getElementById('parent-body');
       body.innerHTML = '';
+
+      body.appendChild(this.privacyNote());
+
+      /* ---------- LEARNING PROGRESS ---------- */
+      body.appendChild(U.el('h3', { class: 'parent-section', text: '📈 Learning progress' }));
+      body.appendChild(this.glanceCard());
+      body.appendChild(this.subjectsCard());
+      body.appendChild(this.deepDiveCard());
+      body.appendChild(this.practiceCard());
+      body.appendChild(this.recentCard());
+      body.appendChild(this.badgesCard());
+      body.appendChild(this.teachesCard());
+
+      /* ---------- FAMILY PLAN ---------- */
+      body.appendChild(U.el('h3', { class: 'parent-section', text: '👨‍👩‍👧 Your family plan' }));
+      body.appendChild(this.plusCard());
+      body.appendChild(this.explorersCard());
+      body.appendChild(this.trustCard());
+      body.appendChild(this.betaCard());
+
+      /* ---------- SETTINGS & DATA ---------- */
+      body.appendChild(U.el('h3', { class: 'parent-section', text: '⚙️ Settings & data' }));
+      body.appendChild(this.settingsCard());
+
+      /* Development only — returns null in production. */
+      var dev = WW.dev.panel(function () { WW.Screens.parent.enter(); });
+      if (dev) body.appendChild(dev);
+    },
+
+    /* ---------------------------------------------------------
+       Everything below reports only what the save file actually
+       contains. Where a number cannot be calculated we say so,
+       rather than inventing one.
+       --------------------------------------------------------- */
+
+    /* Shared derived figures, computed once per render. */
+    metrics: function () {
       var st = S.data.stats;
-      var totalAns = st.answers.correct + st.answers.wrong;
-      var accuracy = totalAns ? Math.round((st.answers.correct / totalAns) * 100) : 0;
+      var answered = st.answers.correct + st.answers.wrong;
+      var accuracy = answered ? Math.round((st.answers.correct / answered) * 100) : null;
 
-      body.appendChild(U.el('p', { class: 'parent-note', html:
+      var subjects = D.worlds.filter(function (w) { return w.id !== 'space'; }).map(function (w) {
+        var s = S.data.worlds[w.id];
+        var tries = s.correct + s.wrong;
+        return {
+          world: w, state: s, tries: tries,
+          accuracy: tries ? Math.round((s.correct / tries) * 100) : null
+        };
+      });
+
+      /* A subject only counts as a strength or a struggle once there is
+         enough of it to mean anything. Five questions is that threshold. */
+      var rated = subjects.filter(function (s) { return s.tries >= 5; });
+      var strongest = null, weakest = null;
+      rated.forEach(function (s) {
+        if (!strongest || s.accuracy > strongest.accuracy) strongest = s;
+        if (!weakest || s.accuracy < weakest.accuracy) weakest = s;
+      });
+
+      return {
+        stats: st, answered: answered, accuracy: accuracy,
+        subjects: subjects, rated: rated, strongest: strongest, weakest: weakest
+      };
+    },
+
+    privacyNote: function () {
+      return U.el('p', { class: 'parent-note', html:
         '<b>Private by design.</b> All of your child\'s progress lives only in this browser ' +
-        '(localStorage) and is never uploaded. No account is needed, and there are no ads or ' +
-        'purchases. The only thing that ever leaves this device is the mailing-list form below, ' +
-        'if you choose to use it.' }));
+        '(localStorage) and is never uploaded. No account is needed, there are no ads, and ' +
+        'nothing is ever sold to a child. The only thing that ever leaves this device is the ' +
+        'mailing-list form below, if you choose to use it.' });
+    },
 
-      /* --- at a glance --- */
-      var glance = UI.card('', [U.el('h3', { text: 'At a glance' })]);
+    glanceCard: function () {
+      var m = this.metrics();
+      var card = UI.card('', [U.el('h3', { text: 'At a glance' })]);
       var g = U.el('div', { class: 'parent-stats' });
       [
-        { k: 'Learning time', v: U.fmtDuration(st.timeMs), e: '⏱️' },
-        { k: 'Activities finished', v: st.activitiesDone, e: '✅' },
-        { k: 'Questions answered', v: totalAns, e: '❓' },
-        { k: 'Correct first time', v: accuracy + '%', e: '🎯' },
+        { k: 'Learning time', v: U.fmtDuration(m.stats.timeMs), e: '⏱️' },
+        { k: 'Activities finished', v: m.stats.activitiesDone, e: '✅' },
+        { k: 'Questions answered', v: m.answered, e: '❓' },
+        { k: 'Correct first time', v: m.accuracy === null ? '—' : m.accuracy + '%', e: '🎯' },
         { k: 'Level', v: S.data.level, e: '⭐' },
         { k: 'Crystals restored', v: P.crystalCount() + ' / 5', e: '🔮' }
       ].forEach(function (s) {
@@ -574,95 +635,216 @@
           U.el('small', { text: s.k })
         ]));
       });
-      glance.appendChild(g);
-      body.appendChild(glance);
+      card.appendChild(g);
+      return card;
+    },
 
-      /* --- subject breakdown --- */
-      var subjects = UI.card('', [U.el('h3', { text: 'Subject progress' })]);
-      var weakest = null;
-      D.worlds.filter(function (w) { return w.id !== 'space'; }).forEach(function (w) {
-        var s = S.data.worlds[w.id];
-        var tries = s.correct + s.wrong;
-        var acc = tries ? Math.round((s.correct / tries) * 100) : null;
-        if (tries >= 5 && (weakest === null || acc < weakest.acc)) weakest = { world: w, acc: acc };
-        var row = U.el('div', { class: 'subject-row' }, [
+    subjectsCard: function () {
+      var m = this.metrics();
+      var card = UI.card('', [U.el('h3', { text: 'Subject progress' })]);
+      m.subjects.forEach(function (s) {
+        card.appendChild(U.el('div', { class: 'subject-row' }, [
           U.el('div', { class: 'subject-head' }, [
-            U.el('b', { text: w.emoji + ' ' + w.subject }),
-            U.el('span', { class: 'muted', text: acc === null
+            U.el('b', { text: s.world.emoji + ' ' + s.world.subject }),
+            U.el('span', { class: 'muted', text: s.accuracy === null
               ? 'not started yet'
-              : acc + '% correct · ' + tries + ' questions' })
+              : s.accuracy + '% correct · ' + s.tries + ' questions' })
           ]),
-          UI.meter('World completion', s.progress, 100, w.color, '')
-        ]);
-        subjects.appendChild(row);
+          UI.meter('World completion', s.state.progress, 100, s.world.color, '')
+        ]));
       });
-      body.appendChild(subjects);
+      return card;
+    },
 
-      /* --- what to practise --- */
-      var practice = UI.card('', [U.el('h3', { text: 'Ideas for practice' })]);
-      if (!totalAns) {
-        practice.appendChild(U.el('p', { class: 'muted', text:
+    /* ---------------------------------------------------------
+       ADVANCED REPORT — a WonderWorld+ feature.
+
+       Every figure here is read straight out of the save. Free
+       players see an honest description of what it contains, with
+       no price and no pressure; the price lives one gate away.
+       --------------------------------------------------------- */
+    deepDiveCard: function () {
+      if (!WW.entitlements.hasFeature('advanced-parent-reports')) {
+        var teaser = UI.card('plus-teaser', [
+          U.el('h3', {}, [
+            U.el('span', { class: 'plus-mark', text: '✨', 'aria-hidden': 'true' }),
+            'Advanced learning report'
+          ]),
+          U.el('p', { class: 'muted', text:
+            'A per-subject breakdown — discoveries made in the Science Lab, chapters read, ' +
+            'words spelled, days traded, strengths and what to practise — plus a longer ' +
+            'history of what your child has done.' }),
+          U.el('p', { class: 'chip-soft chip plan-tag', text: 'Part of WonderWorld+' })
+        ]);
+        teaser.appendChild(UI.bigButton('See what WonderWorld+ includes', function () {
+          WW.Screens.parent.openPlus();
+        }, 'secondary wide'));
+        return teaser;
+      }
+
+      var m = this.metrics();
+      var card = UI.card('', [
+        U.el('h3', {}, [
+          U.el('span', { class: 'plus-mark', text: '✨', 'aria-hidden': 'true' }),
+          'Advanced learning report'
+        ])
+      ]);
+
+      /* strengths — only stated when there is enough evidence for it */
+      var strengths = U.el('div', { class: 'subject-row' });
+      if (m.strongest) {
+        strengths.appendChild(U.el('p', { class: 'report-line', text:
+          '💪 Strongest right now: ' + m.strongest.world.emoji + ' ' + m.strongest.world.subject +
+          ' (' + m.strongest.accuracy + '% correct over ' + m.strongest.tries + ' questions).' }));
+      }
+      if (m.weakest && m.strongest && m.weakest.world.id !== m.strongest.world.id) {
+        strengths.appendChild(U.el('p', { class: 'report-line', text:
+          '🎯 Most room to grow: ' + m.weakest.world.emoji + ' ' + m.weakest.world.subject +
+          ' (' + m.weakest.accuracy + '% correct over ' + m.weakest.tries + ' questions).' }));
+      }
+      if (!m.rated.length) {
+        strengths.appendChild(U.el('p', { class: 'muted', text:
+          'Strengths appear once your child has answered at least five questions in a subject.' }));
+      }
+      card.appendChild(strengths);
+
+      /* per-world detail, all of it read from the save */
+      var rows = this.worldDetail();
+      rows.forEach(function (r) {
+        var row = U.el('div', { class: 'subject-row' }, [
+          U.el('b', { class: 'report-head', text: r.emoji + ' ' + r.name })
+        ]);
+        var ul = U.el('ul', { class: 'bullets report-facts' });
+        r.facts.forEach(function (f) { ul.appendChild(U.el('li', { text: f })); });
+        row.appendChild(ul);
+        card.appendChild(row);
+      });
+
+      card.appendChild(U.el('p', { class: 'muted small', text:
+        'Kept history: ' + S.data.activities.length + ' of ' + WW.entitlements.historyLimit() +
+        ' activities.' }));
+      return card;
+    },
+
+    /* Real figures only. Anything the game does not record is simply absent. */
+    worldDetail: function () {
+      var w = S.data.worlds;
+      var out = [];
+
+      var mathFacts = [
+        'Bridge crossings completed: ' + (w.math.runs || 0),
+        'Best result: ' + (w.math.bestStars ? w.math.bestStars + ' of 3 stars' : 'no full crossing yet'),
+        'Questions: ' + w.math.correct + ' right, ' + w.math.wrong + ' to try again',
+        'Difficulty the game has settled on: level ' + (Math.round((w.math.diff || 1) * 10) / 10) + ' of 6'
+      ];
+      out.push({ emoji: '🧮', name: 'Math Island', facts: mathFacts });
+
+      var chapters = (WW.Worlds.story && WW.Worlds.story.CHAPTERS)
+        ? WW.Worlds.story.CHAPTERS.length : null;
+      out.push({ emoji: '📚', name: 'Story Forest', facts: [
+        'Chapters finished: ' + (w.story.done || []).length + (chapters ? ' of ' + chapters : ''),
+        'Words spelled correctly: ' + (w.story.spelled || 0),
+        'Reading questions: ' + w.story.correct + ' right, ' + w.story.wrong + ' to try again'
+      ] });
+
+      var magnets = (WW.Worlds.science && WW.Worlds.science.MAGNET_OBJECTS)
+        ? WW.Worlds.science.MAGNET_OBJECTS.length : null;
+      out.push({ emoji: '🧪', name: 'Science Lab', facts: [
+        'Plant discoveries: ' + (w.science.plant || []).length + ' of 7',
+        'Objects tested with the magnet: ' + Object.keys(w.science.magnet || {}).length +
+          (magnets ? ' of ' + magnets : ''),
+        'Kinds of weather created: ' + (w.science.weather || []).length + ' of 6'
+      ] });
+
+      out.push({ emoji: '🌎', name: 'Planet City', facts: [
+        'Seasons played: ' + (w.city.season || 1),
+        'Best result: ' + (w.city.bestGoals || 0) + ' of 5 city goals met',
+        'City budget: ' + U.money(w.city.money || 0)
+      ] });
+
+      var hist = w.business.history || [];
+      var totalProfit = hist.reduce(function (n, d) { return n + (d.profit || 0); }, 0);
+      out.push({ emoji: '💰', name: 'Business Town', facts: [
+        'Days traded: ' + hist.length + ' of 7',
+        'Profit across those days: ' + U.money(U.round(totalProfit, 2)),
+        'In the piggy bank: ' + U.money(w.business.savings || 0)
+      ] });
+
+      return out;
+    },
+
+    practiceCard: function () {
+      var m = this.metrics();
+      var card = UI.card('', [U.el('h3', { text: 'Ideas for practice' })]);
+      if (!m.answered) {
+        card.appendChild(U.el('p', { class: 'muted', text:
           'Once your child plays a few activities, personalised suggestions appear here.' }));
-      } else {
-        var tips = [];
-        if (weakest && weakest.acc < 70) {
-          tips.push('⭐ ' + weakest.world.subject + ' is the trickiest right now (' + weakest.acc +
-            '% correct). Playing ' + weakest.world.name + ' together for 5 minutes would help a lot.');
-        }
-        D.worlds.filter(function (w) { return w.id !== 'space'; }).forEach(function (w) {
-          var s = S.data.worlds[w.id];
-          if (s.correct + s.wrong === 0 && P.worldUnlocked(w.id)) {
-            tips.push(w.emoji + ' ' + w.name + ' hasn\'t been tried yet — it covers ' + w.subject.toLowerCase() + '.');
-          }
-        });
-        if (S.data.worlds.math.diff >= 3.5) {
-          tips.push('🧮 Math Island has adapted to harder questions — multiplication and fractions are in play.');
-        }
-        if (!tips.length) tips.push('🎉 Everything looks strong. Keep the sessions short and fun!');
-        var ul = U.el('ul', { class: 'bullets' });
-        tips.forEach(function (t) { ul.appendChild(U.el('li', { text: t })); });
-        practice.appendChild(ul);
+        return card;
       }
-      body.appendChild(practice);
+      var tips = [];
+      if (m.weakest && m.weakest.accuracy < 70) {
+        tips.push('⭐ ' + m.weakest.world.subject + ' is the trickiest right now (' + m.weakest.accuracy +
+          '% correct). Playing ' + m.weakest.world.name + ' together for 5 minutes would help a lot.');
+      }
+      m.subjects.forEach(function (s) {
+        if (s.tries === 0 && P.worldUnlocked(s.world.id)) {
+          tips.push(s.world.emoji + ' ' + s.world.name + ' hasn\'t been tried yet — it covers ' +
+            s.world.subject.toLowerCase() + '.');
+        }
+      });
+      if (S.data.worlds.math.diff >= 3.5) {
+        tips.push('🧮 Math Island has adapted to harder questions — multiplication and fractions are in play.');
+      }
+      if (!tips.length) tips.push('🎉 Everything looks strong. Keep the sessions short and fun!');
+      var ul = U.el('ul', { class: 'bullets' });
+      tips.forEach(function (t) { ul.appendChild(U.el('li', { text: t })); });
+      card.appendChild(ul);
+      return card;
+    },
 
-      /* --- recent accomplishments --- */
-      var recent = UI.card('', [U.el('h3', { text: 'Recent accomplishments' })]);
+    recentCard: function () {
+      var card = UI.card('', [U.el('h3', { text: 'Recent accomplishments' })]);
       if (!S.data.activities.length) {
-        recent.appendChild(U.el('p', { class: 'muted', text: 'Nothing yet — the adventure is just starting.' }));
-      } else {
-        var list = U.el('ul', { class: 'activity-list' });
-        S.data.activities.slice(0, 12).forEach(function (a) {
-          var w = D.worlds.filter(function (x) { return x.id === a.world; })[0] || { emoji: '✨' };
-          list.appendChild(U.el('li', {}, [
-            U.el('span', { class: 'act-emoji', text: w.emoji, 'aria-hidden': 'true' }),
-            U.el('div', {}, [
-              U.el('b', { text: a.name }),
-              U.el('small', { class: 'muted', text: (a.detail ? a.detail + ' · ' : '') +
-                '+' + a.xp + ' XP · ' + U.fmtDate(a.at) })
-            ]),
-            a.stars !== null && a.stars !== undefined
-              ? U.el('span', { class: 'act-stars', text: '⭐'.repeat(a.stars) || '—' }) : null
-          ]));
-        });
-        recent.appendChild(list);
+        card.appendChild(U.el('p', { class: 'muted', text: 'Nothing yet — the adventure is just starting.' }));
+        return card;
       }
-      body.appendChild(recent);
+      /* WonderWorld+ keeps and shows a longer run of history. */
+      var show = WW.entitlements.hasFeature('long-history') ? 40 : 12;
+      var list = U.el('ul', { class: 'activity-list' });
+      S.data.activities.slice(0, show).forEach(function (a) {
+        var w = D.worlds.filter(function (x) { return x.id === a.world; })[0] || { emoji: '✨' };
+        list.appendChild(U.el('li', {}, [
+          U.el('span', { class: 'act-emoji', text: w.emoji, 'aria-hidden': 'true' }),
+          U.el('div', {}, [
+            U.el('b', { text: a.name }),
+            U.el('small', { class: 'muted', text: (a.detail ? a.detail + ' · ' : '') +
+              '+' + a.xp + ' XP · ' + U.fmtDate(a.at) })
+          ]),
+          a.stars !== null && a.stars !== undefined
+            ? U.el('span', { class: 'act-stars', text: '⭐'.repeat(a.stars) || '—' }) : null
+        ]));
+      });
+      card.appendChild(list);
+      return card;
+    },
 
-      /* --- badges earned --- */
+    badgesCard: function () {
       var earned = S.data.badges.map(function (id) { return D.badges[id]; }).filter(Boolean);
-      var bcard = UI.card('', [U.el('h3', { text: 'Badges earned (' + earned.length + ')' })]);
-      if (!earned.length) bcard.appendChild(U.el('p', { class: 'muted', text: 'None yet.' }));
-      else {
-        var bl = U.el('div', { class: 'parent-badges' });
-        earned.forEach(function (b) {
-          bl.appendChild(U.el('span', { class: 'parent-badge', text: b.emoji + ' ' + b.name }));
-        });
-        bcard.appendChild(bl);
+      var card = UI.card('', [U.el('h3', { text: 'Badges earned (' + earned.length + ')' })]);
+      if (!earned.length) {
+        card.appendChild(U.el('p', { class: 'muted', text: 'None yet.' }));
+        return card;
       }
-      body.appendChild(bcard);
+      var bl = U.el('div', { class: 'parent-badges' });
+      earned.forEach(function (b) {
+        bl.appendChild(U.el('span', { class: 'parent-badge', text: b.emoji + ' ' + b.name }));
+      });
+      card.appendChild(bl);
+      return card;
+    },
 
-      /* --- what the game teaches --- */
-      body.appendChild(UI.card('', [
+    teachesCard: function () {
+      return UI.card('', [
         U.el('h3', { text: 'What WonderWorld teaches' }),
         U.el('ul', { class: 'bullets' }, [
           U.el('li', { text: '🧮 Math Island — addition, subtraction, multiplication, division, comparing, fractions, money and word problems. Difficulty adapts automatically to your child.' }),
@@ -671,21 +853,124 @@
           U.el('li', { text: '🌎 Planet City — sustainability, renewable energy, recycling and trade-offs.' }),
           U.el('li', { text: '💰 Business Town — costs, pricing, revenue, profit, saving and budgeting.' })
         ])
-      ]));
+      ]);
+    },
 
-      /* --- family beta signup (parent-facing only) --- */
-      body.appendChild(this.betaCard());
+    /* ---------------------------------------------------------
+       WONDERWORLD+ ENTRY
+       Describes the plan but NEVER prices it. The price lives on
+       the WonderWorld+ page, behind the stricter gate.
+       --------------------------------------------------------- */
+    plusCard: function () {
+      var E = WW.entitlements, status = E.status();
+      var card = UI.card('plus-entry');
 
-      /* --- settings + data --- */
-      var ctrl = UI.card('', [U.el('h3', { text: 'Settings & data' })]);
-      ctrl.appendChild(U.el('div', { class: 'parent-actions' }, [
+      if (status === 'trial') {
+        var left = E.trialDaysLeft();
+        card.appendChild(U.el('h3', { text: '✨ WonderWorld+ free trial' }));
+        card.appendChild(U.el('p', { class: 'muted', text:
+          left + (left === 1 ? ' day' : ' days') + ' of the trial left.' }));
+      } else if (status === 'plus') {
+        card.appendChild(U.el('h3', { text: '✨ WonderWorld+ is active' }));
+        card.appendChild(U.el('p', { class: 'muted', text: 'Thank you for supporting WonderWorld.' }));
+      } else if (status === 'expired') {
+        card.appendChild(U.el('h3', { text: 'WonderWorld+ has ended' }));
+        card.appendChild(U.el('p', { class: 'muted', text:
+          'Your child\'s progress is untouched and the free adventure is still complete.' }));
+      } else {
+        card.appendChild(U.el('h3', { text: 'Take the adventure even further' }));
+        card.appendChild(U.el('p', { class: 'muted', text:
+          'The core WonderWorld adventure is free. Optional WonderWorld+ adds WonderSpace, ' +
+          'new stories, more Explorer profiles, advanced reports and progress backup.' }));
+      }
+
+      if (E.isSimulated()) {
+        card.appendChild(U.el('p', { class: 'dev-note', text:
+          '⚠️ DEVELOPMENT ONLY — simulated subscription state, not a real one.' }));
+      }
+
+      card.appendChild(UI.bigButton(
+        E.isPlus() ? 'Manage WonderWorld+' : 'See what WonderWorld+ includes',
+        function () { WW.Screens.parent.openPlus(); }, 'primary wide'));
+      return card;
+    },
+
+    /* The ONLY route from the dashboard to anything with a price on it. */
+    openPlus: function () {
+      WW.parentGate.require({
+        kind: 'multiply-adjust',
+        scope: 'purchase',
+        title: 'One more check',
+        blurb: 'The next page has subscription details and prices on it. Please answer:',
+        onPass: function () { Nav.go('plus'); }
+      });
+    },
+
+    /* ---------------------------------------------------------
+       EXPLORER PROFILES
+       The roster is real; the switcher is not built yet, so this
+       reports the architecture honestly rather than offering a
+       button that does nothing.
+       --------------------------------------------------------- */
+    explorersCard: function () {
+      var used = WW.profiles.usedSlots(), max = WW.profiles.maxSlots();
+      var card = UI.card('', [
+        U.el('h3', { text: 'Explorers' }),
+        U.el('p', { class: 'muted', text: used + ' of ' + max +
+          (max === 1 ? ' Explorer profile in use.' : ' Explorer profiles in use.') })
+      ]);
+      var list = U.el('div', { class: 'parent-badges' });
+      WW.profiles.list().forEach(function (p) {
+        list.appendChild(U.el('span', { class: 'parent-badge', text: '🎒 ' + p.label }));
+      });
+      card.appendChild(list);
+      card.appendChild(U.el('p', { class: 'muted small', text: max > 1
+        ? 'Up to four Explorers are included with WonderWorld+. Switching between them arrives ' +
+          'in a coming update; the profiles are already kept separately.'
+        : 'WonderWorld+ raises this to four Explorers, each with their own progress.' }));
+      return card;
+    },
+
+    /* ---------------------------------------------------------
+       TRUST
+       Only claims we can point at code for.
+       --------------------------------------------------------- */
+    trustCard: function () {
+      var card = UI.card('trust-card', [U.el('h3', { text: 'Built for kids, not advertisers' })]);
+      var list = U.el('ul', { class: 'trust-list' });
+      [
+        'No ads',
+        'No chat',
+        'No selling children\'s data',
+        'No loot boxes',
+        'No pay-to-win',
+        'No child email required'
+      ].forEach(function (t) {
+        list.appendChild(U.el('li', {}, [
+          U.el('span', { class: 'trust-tick', text: '✓', 'aria-hidden': 'true' }),
+          U.el('span', { text: t })
+        ]));
+      });
+      card.appendChild(list);
+      card.appendChild(U.el('p', { class: 'muted small', text:
+        'Worlds open by learning, never by paying. A subscription adds new content — it never ' +
+        'grants XP, gems, crystals or answers, and never skips a learning requirement.' }));
+      return card;
+    },
+
+    settingsCard: function () {
+      var card = UI.card('', []);
+      card.appendChild(U.el('div', { class: 'parent-actions' }, [
         UI.bigButton('⚙️ Game settings', function () { WW.Settings.openPanel(); }, 'secondary'),
         UI.bigButton('💾 Export progress', function () { WW.Screens.parent.exportData(); }, 'secondary'),
         UI.bigButton('🗑️ Reset all progress', function () { WW.Screens.parent.confirmReset(); }, 'danger')
       ]));
-      ctrl.appendChild(U.el('p', { class: 'muted small', text:
-        'Progress is saved automatically in this browser. Clearing browser data (or using Private Browsing) will remove it.' }));
-      body.appendChild(ctrl);
+      card.appendChild(U.el('p', { class: 'muted small', text:
+        'Progress is saved automatically in this browser. Clearing browser data (or using ' +
+        'Private Browsing) will remove it.' }));
+      card.appendChild(U.el('p', { class: 'muted small', text:
+        '☁️ ' + WW.sync.describe().text }));
+      return card;
     },
 
     /* ---------------------------------------------------------
@@ -714,10 +999,17 @@
       }
 
       card.appendChild(U.el('h3', { text: '💌 Join the family beta' }));
+      /* Deliberately precise. "WonderWorld is free" was a broader promise than
+         we can keep now that WonderWorld+ exists — but the part that matters
+         to a parent, that learning is never sold, is stated plainly and is
+         still true. Nothing a player has today is being taken away. */
       card.appendChild(U.el('p', { class: 'muted', text:
-        'WonderWorld is free and we intend to keep the learning free. Leave your email and ' +
-        'we\'ll tell you when new worlds, extra story chapters and multi-child profiles land — ' +
-        'and we\'ll ask what your family actually wants next.' }));
+        'The core WonderWorld adventure is free. Educational progress is earned through ' +
+        'learning — not purchases. Optional WonderWorld+ expands the adventure with new ' +
+        'worlds, family features and additional content.' }));
+      card.appendChild(U.el('p', { class: 'muted', text:
+        'Leave your email and we\'ll tell you when new worlds and extra chapters land — and ' +
+        'we\'ll ask what your family actually wants next.' }));
 
       var form = U.el('form', { class: 'beta-form', novalidate: true });
 
@@ -854,8 +1146,12 @@
       });
     },
 
-    /* Leaving the grown-ups area re-locks it behind the gate */
-    lock: function () { this.unlocked = false; },
+    /* Leaving the grown-ups area re-locks every door behind it, including
+       the stricter one in front of the subscription page. */
+    lock: function () {
+      this.unlocked = false;
+      if (WW.parentGate) WW.parentGate.reset();
+    },
 
     confirmReset: function () {
       WW.Modal.open({

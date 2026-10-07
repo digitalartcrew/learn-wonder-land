@@ -35,6 +35,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 
+  /* Every URL the page asks for, so the run can prove that adding a
+     subscription layer added no network surface at all. */
+  const requests = [];
+  page.on('request', (r) => requests.push(r.url()));
+
   /* Celebration modals (level up, new world, teaching cards) can stack on top
      of the screen. A child taps them away; so does the test. */
   const clearModals = async () => {
@@ -54,16 +59,67 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   };
 
   /* The grown-ups area sits behind an adult check now. Solve it the way a
-     parent would: read the sum off the screen and type the answer. */
-  const passAdultGate = async () => {
-    const sum = await page.locator('.gate-sum').textContent().catch(() => null);
+     parent would: read the sum off the screen and type the answer.
+
+     Two challenges exist. The dashboard uses "a × b"; anything involving money
+     uses the stricter "a × b − c", which also carries a written instruction.
+     This helper handles whichever one is on screen, inside a modal or not. */
+  const passAdultGate = async (root) => {
+    const scope = root || page;
+    const sum = await scope.locator('.gate-sum').first().textContent().catch(() => null);
     if (!sum) return false;
-    const m = sum.match(/(\d+)\s*×\s*(\d+)/);
-    await page.fill('.gate-input', String(+m[1] * +m[2]));
-    await page.locator('.gate-card button:has-text("Enter")').click();
+    const strict = sum.match(/(\d+)\s*×\s*(\d+)\s*−\s*(\d+)/);
+    const plain = sum.match(/(\d+)\s*×\s*(\d+)/);
+    const answer = strict
+      ? (+strict[1] * +strict[2] - +strict[3])
+      : (+plain[1] * +plain[2]);
+    await scope.locator('.gate-input').first().fill(String(answer));
+    await scope.locator('.gate-card button:has-text("Enter")').first().click();
     await sleep(500);
     return true;
   };
+
+  /* `.screen` is position:absolute; inset:0 with its own overflow, so the body
+     never scrolls and Playwright's fullPage flag captures only the viewport —
+     which is why two quite different dashboards used to produce byte-identical
+     PNGs. Flatten the active screen for the length of the shot, then put it
+     back, so a tall page is actually recorded in full. */
+  const fullShot = async (pg, file) => {
+    const flattened = await pg.addStyleTag({ content:
+      'html, body { height: auto !important; overflow: visible !important; }' +
+      '.screen.active { position: static !important; inset: auto !important;' +
+      ' height: auto !important; overflow: visible !important; }' });
+    await sleep(150);
+    await pg.screenshot({ path: path.join(SHOTS, file), fullPage: true });
+    await flattened.evaluate((el) => el.remove());
+    await sleep(150);
+  };
+
+  /* Can a finger actually get to this control, or is it stranded outside the
+     viewport with nothing to scroll? On a short screen that is the difference
+     between a usable page and a dead end.
+
+     Geometry alone is not enough — an element can sit inside the viewport and
+     still be buried under the fixed world bar — so this also asks the browser
+     what is actually on top at the middle of the control. */
+  const reachable = async (pg, selector) => pg.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return { found: false };
+    el.scrollIntoView({ block: 'center' });
+    const r = el.getBoundingClientRect();
+    const inView = r.top >= 0 && r.bottom <= window.innerHeight &&
+                   r.left >= 0 && r.right <= window.innerWidth;
+    const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    const onTop = !!hit && (hit === el || el.contains(hit) || hit.contains(el));
+    return {
+      found: true,
+      ok: inView && onTop,
+      inView: inView,
+      onTop: onTop,
+      box: Math.round(r.top) + '–' + Math.round(r.bottom) + ' of ' + window.innerHeight +
+           (onTop ? '' : ', covered by ' + (hit ? (hit.className || hit.tagName) : 'nothing'))
+    };
+  }, selector);
 
   console.log('\n— Boot & title —');
   await page.goto(BASE + '/index.html', { waitUntil: 'load' });
@@ -542,13 +598,353 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   await page.evaluate(() => WW.Nav.go('map'));
   await sleep(500);
-  ok('WonderSpace is unlocked on the map', await page.locator('.map-node.locked').count() === 0);
+  ok('nothing is learning-locked any more', await page.locator('.map-node.locked').count() === 0);
+  await page.screenshot({ path: path.join(SHOTS, '15-map-complete-iphone.png') });
+
+  /* =========================================================================
+     WONDERWORLD+  —  the child's side
+     State here: all five crystals restored, no subscription. This is exactly
+     the moment the product has to behave well: the child has EARNED
+     WonderSpace and must not be made to feel they lost it.
+     ========================================================================= */
+  console.log('\n— WonderWorld+ : what a child sees —');
+
+  await page.evaluate(() => { WW.entitlements.clear(); WW.Nav.go('map'); });
+  await sleep(450);
+  ok('a Plus world is marked with a sparkle, not a padlock',
+    await page.locator('.map-node[data-world="space"].premium').count() === 1 &&
+    await page.locator('.map-node[data-world="space"].locked').count() === 0);
+  ok('the premium mark is a label as well as a colour',
+    (await page.locator('.map-node[data-world="space"] .node-label small').textContent())
+      .includes('WonderWorld+'));
+  ok('the map node still announces itself to a screen reader',
+    ((await page.locator('.map-node[data-world="space"]').getAttribute('aria-label')) || '')
+      .includes('Ask a grown-up'));
+
   await page.locator('.map-node[data-world="space"]').click();
   await sleep(400);
-  ok('WonderSpace gives a proper reward message', await page.locator('#modal-layer.show').isVisible());
-  await page.locator('#modal-actions button').first().click();
+  ok('tapping it opens the friendly premium prompt',
+    await page.locator('#modal-layer.show').isVisible());
+  const childModal = (await page.locator('#modal').textContent()).replace(/\s+/g, ' ');
+  ok('it is headed "A New Adventure!"', /A New Adventure/.test(childModal), childModal.slice(0, 90));
+  ok('it names WonderWorld+ and asks for a grown-up',
+    /part of WonderWorld\+/.test(childModal) && /Ask a grown-up/i.test(childModal));
+  ok('it reassures rather than punishes',
+    /still yours|Keep exploring/i.test(childModal), childModal.slice(0, 160));
+  ok('THE CHILD IS SHOWN NO PRICE', !/\$/.test(childModal), childModal);
+  ok('and no purchase wording of any kind',
+    !/subscribe|buy|credit card|trial|payment|\bcost\b/i.test(childModal), childModal);
+  ok('the buttons are "Ask a Grown-Up" and a way to carry on playing',
+    /Ask a Grown-Up/.test(await page.locator('#modal-actions').textContent()) &&
+    /Keep Exploring/.test(await page.locator('#modal-actions').textContent()));
+  await page.screenshot({ path: path.join(SHOTS, '21-premium-child-prompt.png') });
+
+  /* =========================================================================
+     WONDERWORLD+  —  the parental gate in front of the money
+     ========================================================================= */
+  console.log('\n— WonderWorld+ : the parental gate —');
+
+  ok('the Plus page is NOT reachable before the gate is passed',
+    await page.evaluate(() => WW.parentGate.isOpen('purchase')) === false);
+
+  await page.locator('#modal-actions button:has-text("Ask a Grown-Up")').click();
+  await sleep(450);
+  ok('"Ask a Grown-Up" opens an adult check', await page.locator('.gate-card').isVisible());
+  ok('the purchase gate uses the stricter read-and-calculate challenge',
+    await page.locator('.gate-instruction').isVisible() &&
+    /×.*−/.test(await page.locator('.gate-sum').textContent()));
+  ok('the gate explains itself to a screen reader',
+    !!(await page.locator('.gate-input').getAttribute('aria-describedby')));
+  ok('STILL no price while the gate is up',
+    !/\$/.test(await page.locator('#modal').textContent()));
+
+  /* a wrong answer must not open the door */
+  await page.locator('.gate-input').fill('1');
+  await page.locator('.gate-card button:has-text("Enter")').click();
+  await sleep(400);
+  ok('a wrong answer keeps the purchase gate closed',
+    await page.locator('.gate-card').isVisible() &&
+    await page.evaluate(() => WW.parentGate.isOpen('purchase')) === false);
+  ok('and the Plus screen has not been opened',
+    !(await page.locator('#screen-plus.active').isVisible()));
+  await page.screenshot({ path: path.join(SHOTS, '22-purchase-gate.png') });
+
+  await passAdultGate();
+  await sleep(500);
+  ok('a correct answer opens the WonderWorld+ page',
+    await page.locator('#screen-plus.active').isVisible());
+
+  /* =========================================================================
+     WONDERWORLD+  —  the grown-ups page (the only place with a price)
+     ========================================================================= */
+  console.log('\n— WonderWorld+ : the grown-ups page —');
+  const plusTxt = (await page.locator('#plus-body').textContent()).replace(/\s+/g, ' ');
+
+  ok('it opens with the right message', /Take the adventure even further/.test(plusTxt));
+  ok('it says the core adventure stays free',
+    /core WonderWorld adventure is free/.test(plusTxt));
+  ok('every promised benefit is listed',
+    ['WonderSpace', 'New stories', 'More learning challenges', 'Multiple Explorer profiles',
+     'Advanced learning reports', 'Progress backup', 'customize your Explorer']
+      .every((t) => plusTxt.includes(t)),
+    ['WonderSpace', 'New stories', 'More learning challenges', 'Multiple Explorer profiles',
+     'Advanced learning reports', 'Progress backup', 'customize your Explorer']
+      .filter((t) => !plusTxt.includes(t)).join(' | '));
+
+  ok('THE PARENT PAGE SHOWS THE ANNUAL PRICE', plusTxt.includes('$39.99/year'));
+  ok('the parent page shows the monthly price', plusTxt.includes('$6.99/month'));
+  ok('the monthly equivalent of the annual plan is shown',
+    plusTxt.includes('about $3.33/month'));
+  ok('the trial is offered as "7 Days Free"', plusTxt.includes('7 Days Free'));
+  ok('and what happens after the trial is spelled out',
+    plusTxt.includes('$39.99/year after your free trial'));
+  ok('"Cancel anytime." appears', plusTxt.includes('Cancel anytime.'));
+
+  ok('the annual plan is the recommended one',
+    await page.locator('.plan-card.recommended').count() === 1);
+  ok('it is recommended by a text badge, not only by colour',
+    (await page.locator('.plan-badge').textContent()) === 'BEST VALUE');
+  ok('both purchase buttons are present',
+    await page.locator('button:has-text("Start 7-Day Free Trial")').count() === 1 &&
+    await page.locator('button:has-text("Choose Monthly")').count() === 1);
+  ok('Restore Purchases is offered',
+    await page.locator('button:has-text("Restore Purchases")').count() === 1);
+  ok('Manage Subscription is offered',
+    await page.locator('button:has-text("Manage Subscription")').count() === 1);
+  ok('Terms and Privacy are linked',
+    await page.locator('.legal-links a[href="terms.html"]').count() === 1 &&
+    await page.locator('.legal-links a[href="privacy.html"]').count() === 1);
+  ok('the trust list is shown in full',
+    await page.locator('#plus-body .trust-list li').count() === 6);
+  ok('trust claims are text, not just ticks',
+    /No ads/.test(plusTxt) && /No selling children's data/.test(plusTxt) &&
+    /No loot boxes/.test(plusTxt) && /No pay-to-win/.test(plusTxt) &&
+    /No child email required/.test(plusTxt) && /No chat/.test(plusTxt));
+
+  ok('the page is honest that billing is not connected yet',
+    /not connected|DEVELOPMENT ONLY/i.test(plusTxt));
+  ok('the HUD and companion stay out of the grown-ups area',
+    await page.locator('#hud').isHidden() && await page.locator('#buddy').isHidden());
+
+  const plusTargets = await page.evaluate(() => {
+    const bad = [];
+    document.querySelectorAll('#screen-plus button, #screen-plus a.ghost-btn').forEach((b) => {
+      const r = b.getBoundingClientRect();
+      if (r.width && (r.width < 44 || r.height < 44)) bad.push(b.className + ' ' +
+        Math.round(r.width) + 'x' + Math.round(r.height));
+    });
+    return bad;
+  });
+  ok('every control on the Plus page keeps a 44pt target', plusTargets.length === 0,
+    plusTargets.join(' | '));
+  ok('no horizontal overflow on the Plus page',
+    !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
+  await fullShot(page, '23-plus-page.png');
+
+  /* Pressing a purchase button must either refuse honestly (no provider) or,
+     on a development host, grant a state that is clearly marked as simulated.
+     What it must never do is quietly look like a real purchase. */
+  await page.locator('button:has-text("Choose Monthly")').click();
+  await sleep(500);
+  const buyResult = await page.evaluate(() => ({
+    status: WW.entitlements.status(),
+    simulated: WW.entitlements.isSimulated(),
+    provider: WW.billing.providerName()
+  }));
+  ok('a purchase attempt is never passed off as a real subscription',
+    buyResult.status === 'free' || buyResult.simulated === true,
+    JSON.stringify(buyResult));
+  ok('and on a dev host it is the mock adapter doing it, labelled as such',
+    buyResult.provider === 'mock' &&
+    /DEVELOPMENT ONLY/.test(await page.locator('#plus-body').textContent()));
+  await clearModals();
+  await page.evaluate(() => { WW.entitlements.clear(); WW.Screens.plus.enter(); });
   await sleep(300);
-  await page.screenshot({ path: path.join(SHOTS, '15-map-complete-iphone.png') });
+
+  /* =========================================================================
+     Direct navigation must not get around the gate
+     ========================================================================= */
+  console.log('\n— WonderWorld+ : the gate cannot be walked around —');
+  await page.evaluate(() => { WW.Nav.go('map'); });
+  await sleep(400);
+  ok('leaving the grown-ups area re-locks the purchase gate',
+    await page.evaluate(() => WW.parentGate.isOpen('purchase')) === false);
+  await page.evaluate(() => WW.Nav.go('plus'));
+  await sleep(450);
+  ok('navigating straight to the Plus screen shows the gate instead',
+    await page.locator('#screen-plus.active .gate-card').isVisible());
+  ok('and no price is rendered behind it',
+    !/\$/.test(await page.locator('#plus-body').textContent()));
+
+  /* =========================================================================
+     Simulating WonderWorld+ in development
+     ========================================================================= */
+  console.log('\n— WonderWorld+ : simulating the paid state —');
+  const devOn = await page.evaluate(() => ({
+    available: WW.dev.available(),
+    host: WW.env.host(),
+    result: WW.dev.setTier('plus'),
+    status: WW.entitlements.status(),
+    simulated: WW.entitlements.isSimulated()
+  }));
+  ok('the dev simulator is available on localhost', devOn.available === true);
+  ok("WW.dev.setTier('plus') turns WonderWorld+ on", devOn.status === 'plus');
+  ok('and it is flagged as simulated, never as a real subscription',
+    devOn.simulated === true);
+
+  await page.evaluate(() => WW.Nav.go('map'));
+  await sleep(450);
+  ok('with Plus on, WonderSpace is no longer marked premium',
+    await page.locator('.map-node[data-world="space"].premium').count() === 0);
+  await page.locator('.map-node[data-world="space"]').click();
+  await sleep(400);
+  const spaceTxt = await page.locator('#modal').textContent();
+  ok('a subscriber who earned it reaches WonderSpace itself',
+    /rocket is fuelled/.test(spaceTxt), spaceTxt.slice(0, 80));
+  ok('and is told honestly that the world is still being built',
+    /coming in the next update/.test(spaceTxt));
+  await clearModals();
+
+  /* THE invariant: paying must never skip the learning. */
+  console.log('\n— Paying never skips the learning —');
+  const bypass = await page.evaluate(() => {
+    const before = JSON.parse(JSON.stringify(WW.State.data.crystals));
+    ['math', 'story', 'science', 'city', 'business'].forEach((k) => {
+      WW.State.data.crystals[k] = false;
+    });
+    const out = {
+      plus: WW.entitlements.isPlus(),
+      canSpace: WW.entitlements.canAccess('space'),
+      blockedBy: WW.entitlements.check('space').blockedBy
+    };
+    WW.State.data.crystals = before;
+    return out;
+  });
+  ok('a paying subscriber with no crystals still cannot open WonderSpace',
+    bypass.plus === true && bypass.canSpace === false);
+  ok('and the block is reported as LEARNING, not as money',
+    bypass.blockedBy === 'learning');
+
+  const xpBypass = await page.evaluate(() => {
+    const save = WW.State.data.xp, unlocked = JSON.parse(JSON.stringify(WW.State.data.unlocked));
+    WW.State.data.xp = 0;
+    WW.State.data.unlocked = { math: true, story: true, science: false, city: false,
+                               business: false, space: false };
+    const out = ['science', 'city', 'business'].map((id) => WW.entitlements.canAccess(id));
+    WW.State.data.xp = save; WW.State.data.unlocked = unlocked;
+    return out;
+  });
+  ok('a paying subscriber still has to earn the XP worlds',
+    xpBypass.every((v) => v === false));
+
+  /* =========================================================================
+     The grown-ups dashboard, free and Plus
+     ========================================================================= */
+  console.log('\n— Grown-ups dashboard : learning progress —');
+  await page.evaluate(() => { WW.dev.setTier('free'); WW.Nav.go('map'); });
+  await sleep(300);
+  await page.evaluate(() => WW.Nav.go('parent'));
+  await sleep(400);
+  await passAdultGate();
+  const freeDash = (await page.locator('#parent-body').textContent()).replace(/\s+/g, ' ');
+  ok('the dashboard is organised into sections',
+    await page.locator('.parent-section').count() >= 3);
+  ok('learning progress is still reported', /Learning time/.test(freeDash) &&
+    /Subject progress/.test(freeDash) && /Ideas for practice/.test(freeDash));
+  ok('a free parent sees the advanced report described, not hidden',
+    /Advanced learning report/.test(freeDash) && /Part of WonderWorld\+/.test(freeDash));
+  /* In-game money (a lemonade-stand profit, a city budget) is gameplay and is
+     expected here. What must not appear is a SUBSCRIPTION price. */
+  const SUB_PRICE = /\$39\.99|\$6\.99|\$3\.33|\/year|\/month|7 Days Free/;
+  ok('NO SUBSCRIPTION PRICE appears in the dashboard itself', !SUB_PRICE.test(freeDash),
+    (freeDash.match(SUB_PRICE) || []).join(','));
+  ok('the trust list appears for grown-ups too',
+    await page.locator('#parent-body .trust-list li').count() === 6);
+  ok('the Explorer roster is reported honestly',
+    /Explorers/.test(freeDash) && /1 of 1 Explorer/.test(freeDash));
+  ok('the beta copy no longer over-promises',
+    /The core WonderWorld adventure is free/.test(freeDash) &&
+    !/WonderWorld is free and we intend to keep the learning free/.test(freeDash));
+  ok('the signup form is still there and still behind the gate',
+    await page.locator('.beta-card').isVisible());
+  ok('the development panel is visible on localhost',
+    await page.locator('.dev-card').isVisible());
+  await fullShot(page, '24-parent-free.png');
+
+  await page.evaluate(() => { WW.dev.setTier('plus'); WW.Screens.parent.enter(); });
+  await sleep(450);
+  const plusDash = (await page.locator('#parent-body').textContent()).replace(/\s+/g, ' ');
+  ok('a Plus parent gets the advanced report itself',
+    /Strongest right now|Strengths appear once/.test(plusDash));
+  ok('the advanced report breaks every world down',
+    ['Math Island', 'Story Forest', 'Science Lab', 'Planet City', 'Business Town']
+      .every((n) => plusDash.includes(n)));
+  ok('and reports only figures the save actually holds',
+    /Bridge crossings completed/.test(plusDash) &&
+    /Plant discoveries/.test(plusDash) &&
+    /Days traded/.test(plusDash));
+  ok('Plus raises the Explorer allowance to four', /1 of 4 Explorer/.test(plusDash));
+  ok('still no subscription price in the dashboard', !SUB_PRICE.test(plusDash),
+    (plusDash.match(SUB_PRICE) || []).join(','));
+  await fullShot(page, '25-parent-plus.png');
+
+  /* =========================================================================
+     Nothing was broken on the way
+     ========================================================================= */
+  console.log('\n— Saves, offline and privacy are untouched —');
+  const saveIntegrity = await page.evaluate(() => {
+    const raw = window.localStorage.getItem('wonderworld.save.v1');
+    const ent = window.localStorage.getItem('wonderworld.entitlement.v1');
+    const save = JSON.parse(raw);
+    return {
+      saveExists: !!raw,
+      saveKey: WW.State.saveKey(),
+      name: save.player.name,
+      xp: save.xp,
+      crystals: Object.keys(save.crystals).filter((k) => save.crystals[k]).length,
+      entitlementIsSeparate: !!ent && raw.indexOf('"provider"') === -1,
+      profileOne: WW.profiles.active().saveKey
+    };
+  });
+  ok('the save still lives under wonderworld.save.v1',
+    saveIntegrity.saveExists && saveIntegrity.saveKey === 'wonderworld.save.v1');
+  ok('Explorer 1 points at that same key, not a copy',
+    saveIntegrity.profileOne === 'wonderworld.save.v1');
+  ok('the child\'s progress survived the whole subscription flow',
+    saveIntegrity.name === 'Ada' && saveIntegrity.xp > 0 && saveIntegrity.crystals === 5);
+  ok('the subscription record is in a separate key and not inside the save',
+    saveIntegrity.entitlementIsSeparate === true);
+
+  ok('reduced motion still applies on the new screens', await page.evaluate(() => {
+    WW.State.data.settings.reduceMotion = true;
+    WW.Settings.apply();
+    const on = document.body.classList.contains('reduce-motion');
+    const sky = getComputedStyle(document.getElementById('sky')).display;
+    WW.State.data.settings.reduceMotion = false;
+    WW.Settings.apply();
+    return on && sky === 'none';
+  }));
+  ok('big-text mode still fits the Plus page', await page.evaluate(async () => {
+    WW.State.data.settings.bigText = true; WW.Settings.apply();
+    WW.parentGate.markPassed('purchase'); WW.Nav.go('plus');
+    await new Promise((r) => setTimeout(r, 300));
+    const over = document.documentElement.scrollWidth > window.innerWidth + 1;
+    WW.State.data.settings.bigText = false; WW.Settings.apply();
+    return !over;
+  }));
+
+  ok('the service worker is registered and offline support is intact',
+    await page.evaluate(() => navigator.serviceWorker.getRegistrations()
+      .then((r) => r.length >= 1)));
+
+  const offOrigin = requests.filter((u) => u.indexOf(BASE) !== 0 && u.indexOf('data:') !== 0);
+  ok('not one request left this origin during the entire run',
+    offOrigin.length === 0, offOrigin.slice(0, 5).join(' | '));
+  ok('and no request looked like analytics, ads or a payment processor',
+    !requests.some((u) => /analytics|googletag|doubleclick|facebook|stripe|paypal|braintree|mixpanel|segment|amplitude/i.test(u)));
+
+  await page.evaluate(() => { WW.dev.setTier('free'); WW.Nav.go('map'); });
+  await sleep(300);
 
   console.log('\n— Bigger-text accessibility mode —');
   await page.evaluate(() => { WW.State.data.settings.bigText = true; WW.Settings.apply(); WW.Nav.go('math'); });
@@ -606,6 +1002,293 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     WW.Modal.close();
     return /Cheering voice/.test(txt) && /Sound effects/.test(txt);
   }));
+
+  /* =========================================================================
+     WONDERWORLD+ ON A TABLET
+     The phone run above proves the monetization screens behave at 390pt. These
+     are the same screens at iPad sizes, which is where they are most likely to
+     go wrong: six stacked cards on a short landscape viewport, and a layout
+     that was only ever designed one column wide stretched across 1180pt.
+     ========================================================================= */
+  console.log('\n— WonderWorld+ on a tablet —');
+
+  const tabletPlus = async (pg, label, shotPrompt, shotPlus) => {
+    await pg.goto(BASE + '/index.html', { waitUntil: 'load' });
+    await sleep(700);
+
+    /* A child who has earned everything, so WonderSpace is blocked by the
+       subscription rather than by learning — which is the only way to reach
+       the premium prompt at all. */
+    await pg.evaluate(() => {
+      WW.State.data.hasCharacter = true;
+      WW.State.data.player.name = 'Ada';
+      ['math', 'story', 'science', 'city', 'business'].forEach((k) => {
+        WW.State.data.crystals[k] = true;
+        WW.State.data.worlds[k].progress = 100;
+        WW.State.data.unlocked[k] = true;
+      });
+      WW.State.save(true);
+      WW.Modal.close();
+      WW.Nav.go('map');
+    });
+    await sleep(600);
+
+    const overflows = () => pg.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 1);
+
+    ok(label + ': the map still lays out', await pg.locator('.map-node').count() === 7);
+    ok(label + ': WonderSpace is marked by name, not only by colour',
+      ((await pg.locator('.map-node[data-world="space"] .node-label small')
+        .textContent()) || '').includes('WonderWorld+'));
+
+    await pg.locator('.map-node[data-world="space"]').click();
+    await sleep(450);
+    const childModalT = (await pg.locator('#modal').textContent()).replace(/\s+/g, ' ');
+    ok(label + ': the friendly premium prompt opens',
+      await pg.locator('#modal-layer.show').isVisible());
+    ok(label + ': THE CHILD IS STILL SHOWN NO PRICE', !/\$/.test(childModalT), childModalT);
+    ok(label + ': and still no purchase wording',
+      !/subscribe|buy|credit card|trial|payment|\bcost\b/i.test(childModalT), childModalT);
+    ok(label + ': the prompt does not overflow sideways', !(await overflows()));
+    await pg.screenshot({ path: path.join(SHOTS, shotPrompt) });
+
+    await pg.locator('#modal-actions button:has-text("Ask a Grown-Up")').click();
+    await sleep(500);
+    ok(label + ': the purchase gate still stands in the way',
+      await pg.locator('.gate-card').isVisible() &&
+      await pg.evaluate(() => WW.parentGate.isOpen('purchase')) === false);
+    ok(label + ': no price while the gate is up',
+      !/\$/.test(await pg.locator('#modal').textContent()));
+    ok(label + ': the gate keeps a 44pt answer field',
+      await pg.evaluate(() => {
+        const r = document.querySelector('.gate-input').getBoundingClientRect();
+        return r.height >= 44;
+      }));
+
+    await passAdultGate(pg);
+    await sleep(600);
+    ok(label + ': a correct answer opens the Plus page',
+      await pg.locator('#screen-plus.active').isVisible());
+
+    const plusT = (await pg.locator('#plus-body').textContent()).replace(/\s+/g, ' ');
+    ok(label + ': the grown-up does see the price', plusT.includes('$39.99/year'));
+    ok(label + ': the recommendation is still a text badge',
+      (await pg.locator('.plan-badge').textContent()) === 'BEST VALUE');
+    ok(label + ': no horizontal overflow on the Plus page', !(await overflows()));
+
+    const plusTargetsT = await pg.evaluate(() => {
+      const bad = [];
+      document.querySelectorAll('#screen-plus button, #screen-plus a.ghost-btn').forEach((b) => {
+        const r = b.getBoundingClientRect();
+        if (r.width && (r.width < 44 || r.height < 44)) {
+          bad.push(b.className + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
+        }
+      });
+      return bad;
+    });
+    ok(label + ': every Plus control keeps a 44pt target',
+      plusTargetsT.length === 0, plusTargetsT.join(' | '));
+
+    /* The Plus page sits in .world-body, which caps at 980px like every world
+       and the parent dashboard. This proves that cap is actually in effect:
+       a card running the full width of a 1180pt iPad would be hard to read,
+       and one squeezed to a hairline would be worse. */
+    const plan = await pg.evaluate(() => {
+      const c = document.querySelector('.plan-card');
+      if (!c) return null;
+      return { w: Math.round(c.getBoundingClientRect().width), vw: window.innerWidth };
+    });
+    ok(label + ': the pricing card stays within the 980pt reading column',
+      !!plan && plan.w >= 260 && plan.w <= 940,
+      plan ? plan.w + 'pt in a ' + plan.vw + 'pt viewport' : 'no .plan-card');
+
+    await fullShot(pg, shotPlus);
+
+    /* Six cards stack up on this page and Terms/Privacy are the last of them.
+       On a short landscape viewport they are the first thing to be lost. */
+    const legal = await pg.evaluate(() => {
+      const a = document.querySelector('.legal-links a[href="terms.html"]');
+      if (!a) return null;
+      a.scrollIntoView({ block: 'center' });
+      const r = a.getBoundingClientRect();
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: window.innerHeight };
+    });
+    ok(label + ': Terms can actually be scrolled to',
+      !!legal && legal.top >= 0 && legal.bottom <= legal.h,
+      legal ? JSON.stringify(legal) : 'no terms link');
+  };
+
+  await tabletPlus(p2, 'iPad portrait',
+    '26-premium-prompt-ipad-portrait.png', '27-plus-ipad-portrait.png');
+  await tabletPlus(p3, 'iPad landscape',
+    '28-premium-prompt-ipad-landscape.png', '29-plus-ipad-landscape.png');
+
+  /* =========================================================================
+     A PHONE HELD SIDEWAYS
+     844×390 is the only viewport with a media query written specially for it
+     (style.css: "orientation: landscape and max-height: 500px") and it had no
+     coverage at all until now. 390pt of height is where a six-card page, and a
+     gate card carrying an instruction, a sum, a field and a button, are most
+     likely to come apart.
+     ========================================================================= */
+  console.log('\n— A phone held sideways (844×390) —');
+  const phoneL = await browser.newContext({
+    viewport: { width: 844, height: 390 },
+    deviceScaleFactor: 3, isMobile: true, hasTouch: true
+  });
+  const p4 = await phoneL.newPage();
+  p4.on('pageerror', (e) => errors.push('phone-landscape pageerror: ' + e.message));
+  p4.on('console', (m) => {
+    if (m.type() === 'error') errors.push('phone-landscape console: ' + m.text());
+  });
+  await p4.goto(BASE + '/index.html', { waitUntil: 'load' });
+  await sleep(700);
+
+  const sideways = () => p4.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth + 1);
+
+  ok('landscape: the short-viewport media query is the one in force',
+    await p4.evaluate(() =>
+      window.matchMedia('(orientation: landscape) and (max-height: 500px)').matches));
+  ok('landscape: the title lays its art beside the buttons instead of above',
+    await p4.evaluate(() =>
+      getComputedStyle(document.querySelector('.title-wrap')).flexDirection === 'row'));
+  ok('landscape: a start button is still reachable',
+    (await reachable(p4, '#title-buttons button')).ok);
+  ok('landscape: no horizontal overflow on the title', !(await sideways()));
+  await p4.screenshot({ path: path.join(SHOTS, '30-title-phone-landscape.png') });
+
+  /* Again a child who has earned everything, so WonderSpace is blocked by the
+     subscription rather than by learning. */
+  await p4.evaluate(() => {
+    WW.State.data.hasCharacter = true;
+    WW.State.data.player.name = 'Ada';
+    ['math', 'story', 'science', 'city', 'business'].forEach((k) => {
+      WW.State.data.crystals[k] = true;
+      WW.State.data.worlds[k].progress = 100;
+      WW.State.data.unlocked[k] = true;
+    });
+    WW.State.save(true);
+    WW.Modal.close();
+    WW.Nav.go('map');
+  });
+  await sleep(600);
+
+  ok('landscape: the map still lays out all seven nodes',
+    await p4.locator('.map-node').count() === 7);
+  ok('landscape: the map stage flattens to the short-viewport aspect ratio',
+    (await p4.evaluate(() =>
+      getComputedStyle(document.querySelector('.map-stage')).aspectRatio))
+      .replace(/\s/g, '') === '16/8');
+  ok('landscape: the companion shrinks out of the way',
+    await p4.evaluate(() => {
+      const f = document.querySelector('.buddy-face');
+      return !f || Math.round(f.getBoundingClientRect().width) <= 48;
+    }));
+  ok('landscape: no horizontal overflow on the map', !(await sideways()));
+  await p4.screenshot({ path: path.join(SHOTS, '31-map-phone-landscape.png') });
+
+  /* An actual activity, because the landscape rules shorten the play scenes. */
+  await p4.evaluate(() => WW.Nav.go('math'));
+  await sleep(500);
+  await p4.locator('button:has-text("Start the bridge!")').click();
+  await sleep(700);
+  ok('landscape: the bridge game renders', await p4.locator('.bridge-scene').isVisible());
+  ok('landscape: the bridge scene is shortened to fit the viewport',
+    await p4.evaluate(() =>
+      Math.round(document.querySelector('.bridge-scene').getBoundingClientRect().height)) <= 170);
+  ok('landscape: an answer choice is reachable', (await reachable(p4, '.choices button')).ok);
+  ok('landscape: no horizontal overflow mid-activity', !(await sideways()));
+  await p4.screenshot({ path: path.join(SHOTS, '32-math-phone-landscape.png') });
+
+  /* ---- the monetization screens, where height is tightest ---- */
+  await p4.evaluate(() => { WW.Modal.close(); WW.Nav.go('map'); });
+  await sleep(600);
+  await p4.locator('.map-node[data-world="space"]').click();
+  await sleep(500);
+  const landModal = (await p4.locator('#modal').textContent()).replace(/\s+/g, ' ');
+  ok('landscape: the friendly premium prompt opens',
+    await p4.locator('#modal-layer.show').isVisible());
+  ok('landscape: THE CHILD IS STILL SHOWN NO PRICE', !/\$/.test(landModal), landModal);
+  ok('landscape: and still no purchase wording',
+    !/subscribe|buy|credit card|trial|payment|\bcost\b/i.test(landModal), landModal);
+  const askReach = await reachable(p4, '#modal-actions button');
+  ok('landscape: "Ask a Grown-Up" is reachable in 390pt of height',
+    askReach.found && askReach.ok, askReach.box);
+  await p4.screenshot({ path: path.join(SHOTS, '33-premium-prompt-phone-landscape.png') });
+
+  await p4.locator('#modal-actions button:has-text("Ask a Grown-Up")').click();
+  await sleep(500);
+  ok('landscape: the purchase gate still stands in the way',
+    await p4.locator('.gate-card').isVisible() &&
+    await p4.evaluate(() => WW.parentGate.isOpen('purchase')) === false);
+  ok('landscape: no price while the gate is up',
+    !/\$/.test(await p4.locator('#modal').textContent()));
+
+  /* The gate is the tightest thing in the game on a short screen: emoji,
+     heading, blurb, written instruction, sum, field, button, status line. All
+     three of the parts a grown-up has to use must be gettable to. */
+  const sumReach = await reachable(p4, '.gate-sum');
+  ok('landscape: the sum can be read', sumReach.found && sumReach.ok, sumReach.box);
+  const fieldReach = await reachable(p4, '.gate-input');
+  ok('landscape: the answer field can be reached', fieldReach.found && fieldReach.ok,
+    fieldReach.box);
+  const enterReach = await reachable(p4, '.gate-card .big-btn');
+  ok('landscape: the Enter button can be reached', enterReach.found && enterReach.ok,
+    enterReach.box);
+
+  /* The money gate asks the grown-up to read a sentence and then type the
+     answer to it. If the instruction cannot be on screen at the same time as
+     the field, they have to memorise it while scrolling — so this measures the
+     two together rather than each on its own. It fits today with about 70pt to
+     spare, which is little enough that a longer sentence would break it. */
+  const gateFit = await p4.evaluate(() => {
+    const instr = document.querySelector('.gate-instruction');
+    const input = document.querySelector('.gate-input');
+    const modal = document.querySelector('.modal');
+    if (!instr || !input || !modal) return null;
+    return {
+      span: Math.round(input.getBoundingClientRect().bottom - instr.getBoundingClientRect().top),
+      visible: Math.round(modal.clientHeight)
+    };
+  });
+  ok('landscape: the instruction and the answer field fit on screen together',
+    !!gateFit && gateFit.span <= gateFit.visible,
+    gateFit ? gateFit.span + 'pt of instruction+field in ' + gateFit.visible + 'pt visible'
+            : 'gate parts missing');
+  await p4.screenshot({ path: path.join(SHOTS, '34-purchase-gate-phone-landscape.png') });
+
+  await passAdultGate(p4);
+  await sleep(700);
+  ok('landscape: a grown-up can actually complete the gate sideways',
+    await p4.locator('#screen-plus.active').isVisible());
+
+  const landPlus = (await p4.locator('#plus-body').textContent()).replace(/\s+/g, ' ');
+  ok('landscape: the grown-up does see the price', landPlus.includes('$39.99/year'));
+  ok('landscape: no horizontal overflow on the Plus page', !(await sideways()));
+
+  const landTargets = await p4.evaluate(() => {
+    const bad = [];
+    document.querySelectorAll('#screen-plus button, #screen-plus a.ghost-btn').forEach((b) => {
+      const r = b.getBoundingClientRect();
+      if (r.width && (r.width < 44 || r.height < 44)) {
+        bad.push(b.className + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
+      }
+    });
+    return bad;
+  });
+  ok('landscape: every Plus control keeps a 44pt target',
+    landTargets.length === 0, landTargets.join(' | '));
+
+  /* Six cards in 390pt of height. The trial button is the one that matters
+     most, and Terms/Privacy are the furthest from the top. */
+  const trialReach = await reachable(p4, '.plan-card.recommended .big-btn');
+  ok('landscape: the trial button is reachable', trialReach.found && trialReach.ok,
+    trialReach.box);
+  const termsReach = await reachable(p4, '.legal-links a[href="terms.html"]');
+  ok('landscape: Terms can still be scrolled to', termsReach.found && termsReach.ok,
+    termsReach.box);
+  await fullShot(p4, '35-plus-phone-landscape.png');
 
   console.log('\n— Errors —');
   ok('no console or page errors during the whole playthrough', errors.length === 0,
