@@ -80,6 +80,11 @@
     /\bignore (all |your |previous )?(instructions|rules)\b/i
   ];
 
+  /* How much of the current lesson may be carried into the next request.
+     Deliberately small: enough for continuity, nowhere near a transcript. */
+  var MAX_HISTORY_TURNS = 6;
+  var MAX_HISTORY_CHARS = 700;
+
   var REDIRECT =
     'I\'m here to help you learn! Let\'s get back to that — ' +
     'would you like to try a question?';
@@ -89,6 +94,8 @@
     'even with me. Ask me about something you\'re learning instead!';
 
   var Safety = WW.tutorSafety = {
+    MAX_HISTORY_TURNS: MAX_HISTORY_TURNS,
+    MAX_HISTORY_CHARS: MAX_HISTORY_CHARS,
     IDENTITY: 'Your WonderWorld learning guide',
     REDIRECT: REDIRECT,
     PII_REPLY: PII_REPLY,
@@ -131,8 +138,35 @@
         /* game context, named worlds only — never the save */
         worldsPlayed: Array.isArray(opts.worldsPlayed) ? opts.worldsPlayed.slice(0, 6) : [],
 
+        /* A SHORT rolling window of the current lesson, so the tutor can say
+           "like we did a moment ago" instead of starting from nothing every
+           turn. Bounded hard on both axes: a transcript is not a thing we want
+           to accumulate about a child, and an unbounded history would also
+           make input tokens grow with session length. Each line is screened
+           again here — a turn that was safe to display is not automatically
+           safe to re-transmit. */
+        recentTurns: [],
+
         sessionRef: opts.sessionRef || null
       };
+
+      if (Array.isArray(opts.recentTurns)) {
+        var budget = MAX_HISTORY_CHARS;
+        /* newest first, so if the budget runs out it is the OLDEST that is lost */
+        opts.recentTurns.slice(-MAX_HISTORY_TURNS).reverse().forEach(function (t) {
+          if (!t || !t.text) return;
+          var who = t.who === 'child' ? 'child' : 'tutor';
+          var line = String(t.text).slice(0, 160);
+
+          /* A child's line gets the same screening it got on the way in. */
+          if (who === 'child' && !Safety.inspectInput(line).ok) return;
+          if (who === 'tutor' && !Safety.inspectOutput(line).ok) return;
+
+          if (line.length > budget) return;
+          budget -= line.length;
+          ctx.recentTurns.unshift({ who: who, text: line });
+        });
+      }
 
       if (ctx.skillId && T) {
         var def = T.skill(ctx.skillId);

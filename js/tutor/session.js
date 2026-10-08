@@ -80,7 +80,37 @@
     _checkRight: 0,
     _consecutiveWrong: 0,
 
+    /* The current lesson's exchange, so the tutor can refer back to what was
+       just said instead of starting cold every turn. In memory only — never
+       written to storage, cleared when the lesson ends, and trimmed by
+       tutorSafety before any of it is transmitted. */
+    _turns: [],
+
     isRunning: function () { return Session.state !== 'idle'; },
+
+    /* Record a line of the current exchange. */
+    remember: function (who, text) {
+      if (!text) return;
+      Session._turns.push({ who: who, text: String(text) });
+      /* Hard cap well above what is ever sent, so the array cannot grow
+         without bound during a long lesson. */
+      while (Session._turns.length > 20) Session._turns.shift();
+    },
+
+    /* Everything a request needs about where we are. One place, so no caller
+       can forget the history or the game context. */
+    _context: function (intent, extra) {
+      var o = {
+        skillId: Session.skillId,
+        level: Session.level,
+        intent: intent,
+        sessionRef: Session.ref,
+        recentTurns: Session._turns,
+        worldsPlayed: Session._worldsPlayed()
+      };
+      Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
+      return WW.tutorSafety ? WW.tutorSafety.buildContext(o) : o;
+    },
 
     /* ---------- starting ---------- */
 
@@ -102,6 +132,7 @@
       Session._checkDone = 0;
       Session._checkRight = 0;
       Session._consecutiveWrong = 0;
+      Session._turns = [];
 
       var d = Profile.data();
       d.sessions++;
@@ -112,22 +143,22 @@
         WW.events.track('activity_started', { kind: 'tutor_lesson', feature: choice.skillId });
       }
 
-      var ctx = Safety ? Safety.buildContext({
-        skillId: Session.skillId, level: Session.level,
-        intent: 'lesson', sessionRef: Session.ref,
-        worldsPlayed: Session._worldsPlayed()
-      }) : {};
-
-      return Provider.generate('lesson', ctx).then(function (r) {
+      return Provider.generate('lesson', Session._context('lesson', {
+        reason: Session.reason
+      })).then(function (r) {
         var body = r.ok ? r.text : Content.lesson(Session.skillId, Session.level).body;
         var checked = Safety ? Safety.inspectOutput(body) : { ok: true, text: body };
         var def = T.skill(Session.skillId);
+        var text = checked.ok ? checked.text
+                              : Content.lesson(Session.skillId, Session.level).body;
+
+        Session.remember('tutor', text);
 
         return {
           step: 'lesson',
           skillId: Session.skillId,
           title: def ? def.name : Session.skillId,
-          text: checked.ok ? checked.text : Content.lesson(Session.skillId, Session.level).body,
+          text: text,
           expression: 'happy',
           source: r.source
         };
@@ -244,14 +275,16 @@
         var range = T.levelRange(Session.skillId);
         if (Session.level > range[0]) { Session.level--; stepped = true; }
 
-        var ctx = Safety ? Safety.buildContext({
-          skillId: Session.skillId, level: Session.level,
-          intent: 'explain_again', stuck: true, sessionRef: Session.ref
-        }) : {};
+        Session.remember('child', 'I got that wrong twice.');
 
-        return Provider.generate('explain_again', ctx).then(function (r) {
+        return Provider.generate('explain_again', Session._context('explain_again', {
+          stuck: true,
+          missedPrompt: q.prompt,
+          correctAnswer: q.answer
+        })).then(function (r) {
           var text = r.ok ? r.text : (q.explain || 'Let\'s look at it another way.');
           var checked = Safety ? Safety.inspectOutput(text) : { ok: true, text: text };
+          Session.remember('tutor', checked.ok ? checked.text : text);
           return {
             step: 'result',
             correct: false,
@@ -321,6 +354,8 @@
       Session.state = 'idle';
       Session.skillId = null;
       Session._q = null;
+      /* The exchange does not outlive the lesson. */
+      Session._turns = [];
       if (WW.tutorVoice) WW.tutorVoice.stop();
     },
 
@@ -349,20 +384,22 @@
 
       if (WW.events) WW.events.track('activity_started', { kind: 'tutor_question' });
 
-      var ctx = Safety ? Safety.buildContext({
-        question: checked.text,
-        skillId: Session.skillId,
-        level: Session.level,
-        intent: 'answer',
-        sessionRef: Session.ref,
-        worldsPlayed: Session._worldsPlayed()
-      }) : { question: checked.text };
+      Session.remember('child', checked.text);
 
-      return Provider.generate('answer', ctx).then(function (r) {
+      return Provider.generate('answer', Session._context('answer', {
+        question: checked.text
+      })).then(function (r) {
+        /* The screening verdict wins, whatever the provider said. An earlier
+           version fell back to `r.text` when `r.ok` was false — which meant a
+           result that FAILED screening was displayed, because failing
+           screening also makes r.ok false. The two are different questions:
+           `r.ok` is "did we find an answer", `out.ok` is "is it safe to show". */
         var out = Safety ? Safety.inspectOutput(r.text) : { ok: true, text: r.text };
+        var text = out.ok ? (out.text || Safety.REDIRECT) : Safety.REDIRECT;
+        Session.remember('tutor', text);
         return {
           step: 'answer',
-          text: out.ok && r.ok ? out.text : (r.text || Safety.REDIRECT),
+          text: text,
           expression: 'curious',
           source: r.source,
           offline: !r.ok

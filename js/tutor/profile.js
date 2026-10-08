@@ -120,6 +120,13 @@
          field: setting one must never set the other. Not used this sprint. */
       learningLanguage: null,
 
+      /* Spoken conversation with the tutor. OFF until a grown-up passes the
+         parental gate and consents, because unlike everything else here it
+         sends the child's voice off the device. Versioned, so a stored
+         consent always says which wording was actually agreed to, and
+         revocable from the grown-ups dashboard. */
+      voiceChat: { enabled: false, consentedAt: null, consentVersion: null },
+
       assessment: {
         state: 'none',        /* none | in-progress | complete */
         startedAt: null,
@@ -142,9 +149,15 @@
       masteredEver: {},       /* skillId -> when mastery first paid */
       recentLessons: [],      /* timestamps, trimmed to the last 24h */
 
+      /* Spoken minutes, for the voice budget. { at, sec } entries, trimmed to
+         31 days — just enough for the daily and monthly windows and no more.
+         Durations only: nothing about what was said. */
+      voiceLog: [],
+
       /* Non-identifying counters, for the cost model only. No content, no
          timestamps per call, nothing that could single a child out. */
-      usage: { aiCalls: 0, aiTokensIn: 0, aiTokensOut: 0, decisionCalls: 0, offlineFallbacks: 0 }
+      usage: { aiCalls: 0, aiTokensIn: 0, aiTokensOut: 0, decisionCalls: 0,
+               offlineFallbacks: 0, voiceSeconds: 0 }
     };
   }
 

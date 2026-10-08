@@ -50,9 +50,18 @@
   var FAIL_LIMIT = 2;
   var COOLDOWN_MS = 60000;
 
-  /* The only intents worth spending a model call on. Anything else is either
-     generated or scored deterministically. */
-  var WORTH_ASKING = ['answer', 'explain_again', 'lesson'];
+  /* The intents a model handles. Everything NOT on this list — generating a
+     question, scoring an answer, computing mastery, choosing the next skill —
+     stays deterministic, because those are things a computer is actually good
+     at and a model would be slower and less reliable at.
+
+     This list used to be narrower: lessons only went to a model for four
+     "prose" skills and everything else got a canned sentence. That was a cost
+     decision made before the cost was measured, and the measurement killed it
+     — a model-written lesson costs about 0.011 cents, so restricting them was
+     saving roughly two cents a month per subscriber at the price of the tutor
+     sounding like a worksheet. See docs/TUTOR_PRICING.md. */
+  var WORTH_ASKING = ['answer', 'explain_again', 'lesson', 'encourage'];
 
   function settled(v) {
     return window.Promise ? Promise.resolve(v)
@@ -91,12 +100,25 @@
       }
 
       if (intent === 'answer') {
-        /* Be honest: we do not have a canned answer for an arbitrary
-           question, and inventing one would be the worst option available. */
+        /* Answer it properly. WW.tutorAnswers works out arithmetic, spells
+           words it actually knows, defines terms from the glossary, and
+           explains the concepts the lesson bank already covers — all without
+           a network. When it genuinely cannot, it says so and offers a lesson
+           rather than guessing.
+
+           This used to be a flat apology that looked something up for nobody,
+           which made the whole Ask box useless in the default no-key state. */
+        var A = WW.tutorAnswers;
+        if (A && ctx.question) {
+          var a = A.answer(ctx.question);
+          /* `ok: false` still carries usable copy — an honest non-answer that
+             offers something. Report it as a result either way so the UI can
+             show it; `reason` records which it was. */
+          return settled(result(a.ok, a.text, 'offline',
+            a.ok ? null : 'no_offline_answer'));
+        }
         return settled(result(false,
-          'That\'s a great question! I can\'t look that one up right now — ' +
-          'but we can practise something together. Want to try?',
-          'offline', 'no_offline_answer'));
+          'Ask me anything about what we\'re learning!', 'offline', 'no_question'));
       }
 
       return settled(result(false, '', 'offline', 'unsupported_intent'));
@@ -210,14 +232,14 @@
       return Provider.providers[name];
     },
 
-    /* Should this intent cost a model call? */
-    shouldAsk: function (intent, skillId) {
-      if (WORTH_ASKING.indexOf(intent) === -1) return false;
-      if (intent === 'lesson') {
-        /* Only for the skills where prose genuinely beats the bank. */
-        return !!(WW.tutorContent && WW.tutorContent.prefersAI(skillId));
-      }
-      return true;
+    /* Should this intent cost a model call?
+
+       Every teaching intent does. A child gets a lesson written for them, at
+       their level, about the thing they are actually stuck on — not a lookup
+       from a table of nine canned paragraphs. The offline bank is still there
+       underneath for when the network is not. */
+    shouldAsk: function (intent) {
+      return WORTH_ASKING.indexOf(intent) !== -1;
     },
 
     /* The one call the rest of the tutor makes.
@@ -230,8 +252,8 @@
 
       if (Provider._name === 'offline') return offline.generate(intent, ctx);
 
-      if (!Provider.shouldAsk(intent, ctx.skillId) || !server.isAvailable()) {
-        if (WW.learningProfile && Provider.shouldAsk(intent, ctx.skillId)) {
+      if (!Provider.shouldAsk(intent) || !server.isAvailable()) {
+        if (WW.learningProfile && Provider.shouldAsk(intent)) {
           WW.learningProfile.countUsage('offline');
         }
         return offline.generate(intent, ctx);

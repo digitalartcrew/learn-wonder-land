@@ -107,6 +107,9 @@
 
     leave: function () {
       if (WW.tutorVoice) WW.tutorVoice.stop();
+      /* A live microphone must not survive leaving the screen. This is the
+         single most important teardown in the project. */
+      if (WW.tutorVoiceChat) WW.tutorVoiceChat.stop();
       if (WW.tutorAvatar) WW.tutorAvatar.unmount();
       if (Session.isRunning()) Session.end();
     },
@@ -548,9 +551,217 @@
       card.appendChild(U.el('h4', { class: 'tutor-sub', text: 'Ask WonderTutor' }));
       card.appendChild(input);
       card.appendChild(UI.bigButton('Send', function () { Sound.play('tap'); send(); }, 'secondary wide'));
-      /* Voice INPUT is deliberately absent: a microphone in a children's app
-         needs a privacy review we have not done. Text is enough. */
+
+      /* Talking out loud, if and only if a grown-up has turned it on. */
+      var talk = Screen._talkControl();
+      if (talk) card.appendChild(talk);
       return card;
+    },
+
+    /* ---------- talking out loud ----------
+       Returns the push-to-talk control, an invitation to set it up, or null
+       when the device simply cannot do it. Never an enabled mic button for a
+       child whose grown-up has not consented. */
+    _talkControl: function () {
+      var VC = WW.tutorVoiceChat;
+      if (!VC || !VC.isSupported()) return null;
+
+      var wrap = U.el('div', { class: 'tutor-talk' });
+
+      var gate = VC.available();
+
+      /* Two different refusals that must not be muddled.
+
+         Out of allowance for today is a REST — true, temporary, and nothing to
+         do with money. Not being on the plan is a premium door, and dressing
+         that up as "a rest" would be a small lie to a child. */
+      if (VC.isEnabled() && !gate.ok && gate.reason === 'budget:plus') {
+        wrap.appendChild(U.el('p', { class: 'muted small', text:
+          '🎤 Talking out loud is part of WonderWorld+. Ask a grown-up if you ' +
+          'would like to try it — I can still teach you here either way!' }));
+        wrap.appendChild(U.el('button', {
+          class: 'ghost-btn', text: 'Ask a Grown-Up',
+          onclick: function () {
+            Sound.play('tap');
+            if (WW.Premium) WW.Premium.askGrownUp('wonder-tutor');
+          }
+        }));
+        return wrap;
+      }
+      if (VC.isEnabled() && !gate.ok && /^budget/.test(gate.reason || '')) {
+        wrap.appendChild(U.el('p', { class: 'muted small', text:
+          '🎤 My talking voice needs a rest for now — but I can still teach you ' +
+          'here! Type me a question any time.' }));
+        return wrap;
+      }
+
+      if (!VC.isEnabled()) {
+        /* Not consented. Offer the handover, and say plainly what it is — the
+           child is allowed to know that talking needs a grown-up's yes. */
+        wrap.appendChild(U.el('p', { class: 'muted small', text:
+          'You can talk out loud with me, but a grown-up has to turn that on first.' }));
+        wrap.appendChild(U.el('button', {
+          class: 'ghost-btn', text: '🎤 Ask a grown-up about talking',
+          onclick: function () {
+            Sound.play('tap');
+            WW.parentGate.require({
+              kind: 'multiply-adjust',
+              scope: 'voice-consent',
+              title: 'Grown-ups only',
+              blurb: 'The next page explains talking out loud with WonderTutor, ' +
+                     'and what it means for your child\'s privacy.',
+              onPass: function () { Screen.voiceConsent(); }
+            });
+          }
+        }));
+        return wrap;
+      }
+
+      /* Consented. Push-to-talk, with an unmistakable live indicator. */
+      var status = U.el('p', { class: 'tutor-talk-status muted small', role: 'status',
+        text: 'Hold the button to talk.' });
+
+      var btn = U.el('button', {
+        class: 'big-btn secondary wide tutor-talk-btn',
+        id: 'tutor-talk-btn',
+        'aria-label': 'Hold to talk to WonderTutor'
+      }, [U.el('span', { text: '🎤 Hold to talk' })]);
+
+      var dot = U.el('span', { class: 'tutor-mic-dot', 'aria-hidden': 'true' });
+      btn.appendChild(dot);
+
+      VC.onListening = function (live) {
+        btn.classList.toggle('is-live', !!live);
+        /* The indicator is a word as well as a colour and a dot. */
+        status.textContent = live ? '🔴 Listening — let go when you\'re done.'
+                                  : 'Hold the button to talk.';
+      };
+      VC.onState = function (s) {
+        if (s === 'connecting') status.textContent = 'Connecting…';
+        else if (s === 'error') status.textContent = 'Voice isn\'t working right now — ' +
+          'you can still type to me!';
+      };
+      VC.onError = function (reason) {
+        btn.classList.remove('is-live');
+        if (reason === 'budget_spent') {
+          status.textContent = 'My talking voice needs a rest — keep typing to me!';
+          btn.disabled = true;
+        } else if (reason === 'mic_denied') {
+          status.textContent = 'I can\'t hear the microphone. You can still type to me!';
+        }
+      };
+      VC.onTranscript = function (who, text) {
+        if (!text) return;
+        var bubble = document.getElementById('tutor-bubble');
+        if (who === 'tutor' && bubble) bubble.textContent = text;
+      };
+
+      var begin = function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!VC.isOpen()) {
+          status.textContent = 'Connecting…';
+          VC.start({ skillId: Session.skillId }).then(function (r) {
+            if (r && r.ok) VC.hold();
+          });
+          return;
+        }
+        VC.hold();
+      };
+      var finish = function () { if (VC.listening) VC.release(); };
+
+      btn.addEventListener('pointerdown', begin);
+      btn.addEventListener('pointerup', finish);
+      /* Releasing outside the button, losing focus, or the tab going away must
+         all end the turn — a mic that stays live because a gesture ended
+         somewhere unexpected is exactly the bug worth designing out. */
+      btn.addEventListener('pointercancel', finish);
+      btn.addEventListener('pointerleave', finish);
+      btn.addEventListener('blur', finish);
+      btn.addEventListener('keydown', function (e) {
+        if (e.key === ' ' || e.key === 'Enter') begin(e);
+      });
+      btn.addEventListener('keyup', function (e) {
+        if (e.key === ' ' || e.key === 'Enter') finish();
+      });
+
+      wrap.appendChild(btn);
+      wrap.appendChild(status);
+      wrap.appendChild(U.el('button', {
+        class: 'ghost-btn', text: 'Stop talking',
+        onclick: function () { Sound.play('tap'); VC.stop(); }
+      }));
+      return wrap;
+    },
+
+    /* The grown-up's consent page. Behind the gate, and deliberately blunt
+       about what is being agreed to. */
+    voiceConsent: function () {
+      var VC = WW.tutorVoiceChat;
+      var b = body();
+      if (!b || !VC) return;
+      if (WW.tutorVoice) WW.tutorVoice.stop();
+      b.innerHTML = '';
+
+      var card = UI.card('tutor-card', [
+        U.el('h3', { text: '🎤 Talking out loud with WonderTutor' }),
+        U.el('p', { class: 'muted', text:
+          'Your child can speak to WonderTutor and hear it answer. This is the ' +
+          'only part of WonderWorld that sends anything off this device, so ' +
+          'we want you to decide with the facts in front of you.' })
+      ]);
+
+      var list = U.el('ul', { class: 'trust-list consent-list' });
+      [
+        ['✓', 'Your child holds a button to talk. There is no open microphone — ' +
+              'the mic is switched off between turns, not just ignored.'],
+        ['✓', 'A red indicator shows whenever the microphone is live.'],
+        ['✓', 'We never record, store or upload your child\'s voice. Nothing is ' +
+              'saved on our side.'],
+        ['✓', 'We never send their nickname, your email, or anything from their save.'],
+        ['!', 'Their speech IS sent to our AI provider to be understood and ' +
+              'answered, in the moment. That is how talking works, and it is the ' +
+              'trade-off you are agreeing to.'],
+        ['✓', 'You can turn this off again at any time in the Grown-Ups dashboard.'],
+        ['✓', 'Everything WonderTutor teaches works by typing. Talking is never required.']
+      ].forEach(function (row) {
+        list.appendChild(U.el('li', {}, [
+          U.el('span', { class: row[0] === '!' ? 'trust-tick is-warn' : 'trust-tick',
+                         text: row[0], 'aria-hidden': 'true' }),
+          row[1]
+        ]));
+      });
+      card.appendChild(list);
+
+      card.appendChild(U.el('p', { class: 'muted small', text:
+        'Full detail is in our privacy policy.' }));
+      card.appendChild(U.el('a', {
+        class: 'ghost-btn', href: 'privacy.html', target: '_blank',
+        rel: 'noopener', text: 'Read the privacy policy'
+      }));
+
+      if (VC.isEnabled()) {
+        card.appendChild(U.el('p', { class: 'tutor-reward', text: 'Talking is ON' }));
+        card.appendChild(UI.bigButton('Turn talking off', function () {
+          VC.revokeConsent();
+          Sound.play('tap');
+          WW.FX.toast('Talking turned off.');
+          Screen.voiceConsent();
+        }, 'secondary wide'));
+      } else {
+        card.appendChild(UI.bigButton('I\'m the grown-up — turn talking on', function () {
+          VC.grantConsent();
+          Sound.play('unlock');
+          WW.FX.toast('Talking turned on.');
+          Screen.voiceConsent();
+        }, 'primary wide'));
+      }
+
+      card.appendChild(U.el('button', {
+        class: 'ghost-btn', text: '← Back to WonderTutor',
+        onclick: function () { Sound.play('tap'); Screen.enter(); }
+      }));
+
+      b.appendChild(card);
     },
 
     /* ---------- the quiet states ---------- */

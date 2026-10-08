@@ -965,6 +965,46 @@
         String(d2.sessions) + ' · ' + d2.lessonsCompleted + ' lessons completed'
       ]));
 
+      /* Talking out loud is the one setting that sends anything off the
+         device, so its state is always visible here and always revocable —
+         a consent you cannot find is not a consent. */
+      var VC = WW.tutorVoiceChat;
+      if (VC) {
+        var on = VC.isEnabled();
+        card.appendChild(U.el('p', { class: 'report-line' }, [
+          U.el('b', { text: 'Talking out loud: ' }),
+          on ? 'ON — your child can speak to WonderTutor' : 'off'
+        ]));
+        if (on) {
+          card.appendChild(U.el('p', { class: 'muted small', text:
+            'Their speech is sent to our AI provider to be understood. We never ' +
+            'record or store it. Push-to-talk only — there is no open microphone.' }));
+
+          if (WW.tutor && WW.tutor.voiceBudget) {
+            var vb = WW.tutor.voiceBudget();
+            var mins = function (sec) { return Math.round(sec / 60); };
+            card.appendChild(U.el('p', { class: 'report-line' }, [
+              U.el('b', { text: 'Talking time: ' }),
+              mins(vb.usedTodaySec) + ' of ' + mins(vb.dayLimitSec) + ' min today · ' +
+              mins(vb.usedMonthSec) + ' of ' + mins(vb.monthLimitSec) + ' min this month'
+            ]));
+            card.appendChild(U.el('p', { class: 'muted small', text:
+              'Spoken conversation has a real running cost, so it has a fair-use ' +
+              'limit. Your child is never shown these numbers — when the limit is ' +
+              'reached WonderTutor simply says its voice needs a rest, and carries ' +
+              'on teaching by text.' }));
+          }
+          card.appendChild(U.el('button', {
+            class: 'ghost-btn', text: 'Turn talking off',
+            onclick: function () {
+              VC.revokeConsent();
+              FX.toast('Talking turned off.');
+              WW.Screens.parent.enter();
+            }
+          }));
+        }
+      }
+
       /* Fair use, stated to the parent rather than counted at the child. */
       if (WW.tutor && WW.entitlements && WW.entitlements.isPlus()) {
         var today = WW.tutor._lessonsToday();

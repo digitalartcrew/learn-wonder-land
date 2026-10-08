@@ -1557,3 +1557,39 @@ body.reduce-motion .tutor-cheek { transition: none !important; }
   .tutor-grade { min-height: 44px; }
   .tutor-lang { min-height: 48px; }
 }
+
+/* --- talking out loud -------------------------------------
+   The live-microphone indicator is deliberately loud: a red dot,
+   a pulsing ring, a colour change AND a written status line, so
+   it is never ambiguous whether the mic is on — including for a
+   child who cannot rely on colour. */
+.tutor-talk { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+.tutor-talk-btn { position: relative; }
+.tutor-mic-dot {
+  position: absolute; top: 10px; right: 14px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: transparent; transition: background .15s ease;
+}
+.tutor-talk-btn.is-live { background: #d93b4b; border-color: #a82332; color: #fff; }
+.tutor-talk-btn.is-live .tutor-mic-dot {
+  background: #fff;
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, .8);
+  animation: micPulse 1.1s ease-out infinite;
+}
+@keyframes micPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 255, 255, .8); }
+  100% { box-shadow: 0 0 0 12px rgba(255, 255, 255, 0); }
+}
+.tutor-talk-status { margin-top: 8px; min-height: 1.3em; font-weight: 700; }
+
+/* The consent list reuses the trust styling, with one row that is a
+   caveat rather than a promise — marked by glyph and colour, not colour. */
+.consent-list .trust-tick.is-warn {
+  background: var(--nudge-bg); color: var(--nudge); border-color: var(--nudge);
+}
+.consent-list li { align-items: flex-start; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tutor-talk-btn.is-live .tutor-mic-dot { animation: none !important; }
+}
+body.reduce-motion .tutor-talk-btn.is-live .tutor-mic-dot { animation: none !important; }

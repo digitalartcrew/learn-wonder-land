@@ -43,8 +43,10 @@ vm.createContext(sandbox);
  /* WonderTutor. Loaded in the same dependency order as index.html. The
     screen is omitted: it is pure DOM and the stubs here have no layout. */
  'js/tutor/languages.js', 'js/tutor/taxonomy.js', 'js/tutor/profile.js',
- 'js/tutor/content.js', 'js/tutor/safety.js', 'js/tutor/emotion.js',
- 'js/tutor/avatar.js', 'js/tutor/voice.js', 'js/tutor/provider.js',
+ 'js/tutor/content.js', 'js/tutor/answers.js',
+ 'js/tutor/safety.js', 'js/tutor/emotion.js',
+ 'js/tutor/avatar.js', 'js/tutor/voice.js', 'js/tutor/realtime.js',
+ 'js/tutor/provider.js',
  'js/tutor/assessment.js', 'js/tutor/engine.js', 'js/tutor/session.js'
 ].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), sandbox, { filename: f });
@@ -324,8 +326,10 @@ section('9. Child-safety checks');
    child-safety properties below are enforced across all of it. */
 const TUTOR_FILES = [
   'js/tutor/languages.js', 'js/tutor/taxonomy.js', 'js/tutor/profile.js',
-  'js/tutor/content.js', 'js/tutor/safety.js', 'js/tutor/emotion.js',
-  'js/tutor/avatar.js', 'js/tutor/voice.js', 'js/tutor/provider.js',
+  'js/tutor/content.js', 'js/tutor/answers.js',
+ 'js/tutor/safety.js', 'js/tutor/emotion.js',
+  'js/tutor/avatar.js', 'js/tutor/voice.js', 'js/tutor/realtime.js',
+ 'js/tutor/provider.js',
   'js/tutor/assessment.js', 'js/tutor/engine.js', 'js/tutor/session.js',
   'js/tutor/screen.js'
 ];
@@ -378,7 +382,28 @@ ok('speech synthesis is restricted to on-device voices',
   /localService/.test(clientSrc));
 ok('the grown-ups area is gated before it renders',
   /renderGate/.test(clientSrc) && /if \(!this\.unlocked\)/.test(clientSrc));
-ok('no external URLs in the client', !/https?:\/\/(?!www\.w3\.org)/.test(src));
+/* This used to be "no external URLs at all". Real-time voice changed that:
+   WebRTC requires the BROWSER to post its SDP offer straight to the provider,
+   so one external host is now named in the client. The alternative — proxying
+   audio through our own Worker — would put us inside the audio path, which is
+   worse for privacy, not better. So the property worth asserting is no longer
+   "none" but "exactly one, in exactly one file, for exactly one purpose". */
+const EXTERNAL_ALLOWED = ['https://api.openai.com/v1/realtime/calls'];
+const externalUrls = (src.match(/https?:\/\/[^\s"'`<>)]+/g) || [])
+  .filter((u) => !/^https?:\/\/(www\.w3\.org|localhost|127\.0\.0\.1)/.test(u));
+ok('the only external URL in the client is the WebRTC voice endpoint',
+  externalUrls.every((u) => EXTERNAL_ALLOWED.indexOf(u) !== -1),
+  externalUrls.filter((u) => EXTERNAL_ALLOWED.indexOf(u) === -1).join(' | '));
+ok('and it is quarantined in the voice module alone', (() => {
+  const others = CLIENT_FILES.filter((f) => f !== 'js/tutor/realtime.js')
+    .map(read).join('\n');
+  return !/api\.openai\.com/.test(others);
+})());
+ok('no other client file reaches any external host', (() => {
+  const others = CLIENT_FILES.filter((f) => f !== 'js/tutor/realtime.js')
+    .map(read).join('\n');
+  return !/https?:\/\/(?!www\.w3\.org|localhost|127\.0\.0\.1)/.test(others);
+})());
 ok('no gambling, ad or web-payment-API code',
   !/lootBox|gacha|inAppPurchase|requestPayment|PaymentRequest|adsbygoogle|googletag/i.test(src));
 ok('no remote scripts or iframes', !/<script[^>]+src=["']https?:|<iframe/i.test(src));
@@ -811,11 +836,11 @@ ok('index.html loads ' + scriptSrcs.length + ' local scripts', scriptSrcs.length
 ok('every script index.html loads is pre-cached by the service worker',
   scriptSrcs.every((s) => swSrc.indexOf("'" + s + "'") !== -1),
   scriptSrcs.filter((s) => swSrc.indexOf("'" + s + "'") === -1).join(','));
-/* Bumped to v4 for WonderTutor: 13 new scripts joined the offline shell, and
+/* Bumped again for real-time voice; v4 was WonderTutor: 13 new scripts joined the offline shell, and
    an old cache serving the previous script list would leave the tutor broken
    rather than absent. Update both sides together on every release. */
 ok('the service worker VERSION was bumped for this release',
-  /const VERSION = 'ww-v4'/.test(swSrc));
+  /const VERSION = 'ww-v6'/.test(swSrc));
 ok('code is still network-first so HTML and JS cannot drift apart',
   /req\.mode === 'navigate' \|\| CODE\.test/.test(swSrc));
 ok('the signup endpoint is still never cached', /pathname\.includes\('\/api\/'\)/.test(swSrc));
@@ -828,8 +853,11 @@ section('21. No new network surface');
 ok('every network call in the client is still first-party and same-origin',
   (clientSrc.match(/\bfetch\s*\(\s*['"`][^'"`]*/g) || [])
     .every((c) => ALLOWED_ENDPOINTS.some((e) => c.endsWith(e))));
-ok('no OpenAI or model endpoint is ever named in client code',
-  !/api\.openai\.com|v1\/chat\/completions|v1\/decisions|anthropic|googleapis/i.test(clientSrc));
+ok('no TEXT model endpoint is ever named in client code',
+  !/v1\/chat\/completions|v1\/decisions|anthropic|googleapis/i.test(clientSrc));
+ok('the only provider endpoint in the client is the WebRTC audio one',
+  (clientSrc.match(/api\.openai\.com[^\s"'`]*/g) || [])
+    .every((u) => u === 'api.openai.com/v1/realtime/calls'));
 ok('the monetization layer makes no network calls at all', (() => {
   const mon = ['js/env.js', 'js/events.js', 'js/entitlements.js', 'js/billing.js',
     'js/profiles.js', 'js/sync.js', 'js/parentgate.js', 'js/plus.js', 'js/devtools.js']
@@ -1114,8 +1142,12 @@ ok('a clean context passes the outbound check', S2.scrubOutbound(ctx).ok === tru
 
 ok('no API key or secret appears anywhere in client code',
   !/sk-[A-Za-z0-9]{16,}|OPENAI_API_KEY|api[_-]?key\s*[:=]\s*['"][A-Za-z0-9]/i.test(clientSrc));
-ok('the client never names a model provider endpoint',
-  !/api\.openai\.com|v1\/chat\/completions|v1\/decisions/i.test(clientSrc));
+ok('the client never names a TEXT model endpoint',
+  !/v1\/chat\/completions|v1\/decisions/i.test(clientSrc));
+ok('text tutoring still goes only through our own origin',
+  (CLIENT_FILES.filter((f) => f !== 'js/tutor/realtime.js').map(read).join('\n')
+    .match(/\bfetch\s*\(\s*['"`][^'"`]*/g) || [])
+    .every((c) => ALLOWED_ENDPOINTS.some((e) => c.endsWith(e))));
 ok('AI usage can be counted without identifying the child', (() => {
   freshTutor(2);
   TP.countUsage('ai', 120, 60);
@@ -1172,11 +1204,22 @@ ok('the offline bank answers for every skill the diagnostic plans',
   WW.tutorAssessment.plan(2).every((id) => !!TC.question(id, TT.defaultLevel(id, 2))));
 ok('the offline provider is always available',
   WW.tutorProvider.providers.offline.isAvailable() === true);
-ok('a model is only paid for where it beats plain JavaScript',
-  WW.tutorProvider.shouldAsk('lesson', 'addition') === false &&
-  WW.tutorProvider.shouldAsk('answer', 'addition') === true);
-ok('arithmetic lessons never cost an API call',
-  !WW.tutorProvider.shouldAsk('lesson', 'multiplication'));
+/* Teaching goes to a model; machinery does not. The old version of this test
+   asserted that arithmetic LESSONS never cost a call, which was a cost
+   decision made before the cost was measured — it saved ~2 cents a month and
+   made the tutor sound like a worksheet. What still matters is that generating
+   and scoring questions never costs anything. */
+ok('every teaching intent goes to a model when one is available',
+  ['lesson', 'answer', 'explain_again', 'encourage']
+    .every((i) => WW.tutorProvider.shouldAsk(i) === true));
+ok('question generation and scoring never cost an API call',
+  WW.tutorProvider.shouldAsk('question') === false &&
+  WW.tutorProvider.shouldAsk('score') === false &&
+  WW.tutorProvider.shouldAsk('mastery') === false);
+ok('and both are still done locally, with no provider at all', (() => {
+  const qq = TC.question('multiplication', 3);
+  return !!qq && TC.check(qq, qq.answer) === true;
+})());
 
 /* Entitlement: the tutor is Plus, and the core game is untouched. */
 ok('WonderTutor is registered as a WonderWorld+ feature',
@@ -1235,6 +1278,399 @@ ok('mastery pays only the first time a skill is mastered', (() => {
 ok('chatting earns nothing at all',
   typeof WW.tutor.rewardLesson === 'function' &&
   !/reward/i.test(String(WW.tutorSession.ask)));
+
+/* ---- session memory: continuity without a transcript ---- */
+ok('the tutor carries a short memory of the current lesson', (() => {
+  const c = S2.buildContext({
+    skillId: 'addition', level: 1, intent: 'answer',
+    recentTurns: [
+      { who: 'tutor', text: 'Adding means putting groups together.' },
+      { who: 'child', text: 'so 3 and 4 is 7?' }
+    ]
+  });
+  return c.recentTurns.length === 2 && c.recentTurns[1].who === 'child';
+})());
+ok('the memory is bounded, so it can never become a transcript', (() => {
+  const many = [];
+  for (let i = 0; i < 40; i++) many.push({ who: 'child', text: 'turn number ' + i });
+  const c = S2.buildContext({ skillId: 'addition', intent: 'answer', recentTurns: many });
+  return c.recentTurns.length <= S2.MAX_HISTORY_TURNS;
+})());
+ok('and bounded by characters as well as turns', (() => {
+  const long = [];
+  for (let i = 0; i < 6; i++) long.push({ who: 'child', text: 'x'.repeat(160) });
+  const c = S2.buildContext({ skillId: 'addition', intent: 'answer', recentTurns: long });
+  const chars = c.recentTurns.reduce((n, t) => n + t.text.length, 0);
+  return chars <= S2.MAX_HISTORY_CHARS;
+})());
+ok('when the budget runs out it is the OLDEST turn that is dropped', (() => {
+  const long = [];
+  for (let i = 0; i < 8; i++) long.push({ who: 'child', text: String(i) + 'y'.repeat(150) });
+  const c = S2.buildContext({ skillId: 'addition', intent: 'answer', recentTurns: long });
+  /* the newest turn starts with '7' and must have survived */
+  return c.recentTurns[c.recentTurns.length - 1].text.charAt(0) === '7';
+})());
+ok('a remembered turn is re-screened before it is sent again', (() => {
+  const c = S2.buildContext({
+    skillId: 'addition', intent: 'answer',
+    recentTurns: [
+      { who: 'child', text: 'my email is kid@example.com' },
+      { who: 'child', text: 'why is 8 x 4 32?' }
+    ]
+  });
+  return c.recentTurns.length === 1 && !/kid@example/.test(JSON.stringify(c.recentTurns));
+})());
+ok('the memory never leaves the device as storage', (() => {
+  const tutorSrc = TUTOR_FILES.map(read).join('\n');
+  /* _turns must not appear next to a localStorage write */
+  return !/setItem\([^)]*_turns/.test(tutorSrc);
+})());
+ok('ending a lesson forgets the exchange', (() => {
+  WW.tutorSession._turns = [{ who: 'child', text: 'hello' }];
+  WW.tutorSession.end();
+  return WW.tutorSession._turns.length === 0;
+})());
+
+/* ---- real-time voice: the gates, not the happy path ---- */
+section('28a. WonderTutor: Ask WonderTutor actually answers');
+const AN = WW.tutorAnswers;
+freshTutor(3);
+
+/* The five examples from the product brief must all work with NO model. */
+ok('"Why is 8 x 4 32?" gets the reasoning, not just a yes', (() => {
+  const a = AN.answer('Why is 8 x 4 32?');
+  return a.ok && /repeated addition/i.test(a.text) && /8 \+ 8 \+ 8 \+ 8/.test(a.text);
+})());
+ok('"What is a planet?" is answered', (() => {
+  const a = AN.answer('What is a planet?');
+  return a.ok && /orbit|travels around a star/i.test(a.text);
+})());
+ok('"How do I spell elephant?" is answered letter by letter', (() => {
+  const a = AN.answer('How do I spell elephant?');
+  return a.ok && /e-l-e-p-h-a-n-t/.test(a.text);
+})());
+ok('"Why do plants need sunlight?" is answered', (() => {
+  const a = AN.answer('Why do plants need sunlight?');
+  return a.ok && /food|photosynthesis/i.test(a.text);
+})());
+ok('"What does profit mean?" is answered', (() => {
+  const a = AN.answer('What does profit mean?');
+  return a.ok && /revenue/i.test(a.text) && /cost/i.test(a.text);
+})());
+
+/* Arithmetic is computed, not looked up. */
+ok('plain arithmetic is worked out correctly', (() => {
+  const cases = [['what is 7 + 5', '12'], ['what is 100 - 37', '63'],
+                 ['what is 9 x 6', '54'], ['what is 12 divided by 3', '4']];
+  return cases.every(([q, want]) => {
+    const a = AN.answer(q);
+    return a.ok && a.text.indexOf(want) !== -1;
+  });
+})());
+ok('a child\'s wrong premise is corrected kindly, not confirmed', (() => {
+  const a = AN.answer('why is 6 x 7 40?');
+  return a.ok && /actually 42/.test(a.text) && !/wrong|no,/i.test(a.text);
+})());
+ok('a remainder is explained rather than shown as a decimal', (() => {
+  const a = AN.answer('what is 10 divided by 4');
+  return a.ok && /left over/.test(a.text) && !/2\.5/.test(a.text);
+})());
+ok('dividing by zero is handled, not crashed', (() => {
+  const a = AN.answer('what is 8 divided by 0');
+  return a.ok && /cannot divide by zero/i.test(a.text);
+})());
+ok('fractions of a number are worked out', (() => {
+  const a = AN.answer('what is half of 10');
+  return a.ok && /5/.test(a.text);
+})());
+ok('word forms of operators are understood', (() => {
+  return ['what is 6 times 7', 'what is 20 minus 8', 'what is 15 divided by 5']
+    .every((q) => AN.answer(q).ok);
+})());
+ok('the answer is never just the number — it teaches', (() => {
+  const a = AN.answer('what is 9 x 6');
+  return a.ok && a.text.length > 40;
+})());
+
+/* Breadth. */
+ok('the glossary covers all six domains', (() => {
+  const terms = ['fraction', 'verb', 'planet', 'community', 'profit', 'syllable'];
+  return terms.every((t) => AN.answer('what is a ' + t + '?').ok);
+})());
+ok('it has real breadth, not three examples', (() => {
+  const c = AN.coverage();
+  return c.glossary >= 80 && c.spellings >= 40 && c.concepts >= 8;
+})());
+
+/* The thing that matters most: it refuses to invent. */
+ok('an unknown spelling is refused rather than guessed', (() => {
+  const a = AN.answer('how do you spell zxcvbnm');
+  return a.ok === false && /won\'t guess/i.test(a.text);
+})());
+ok('an unknown question is refused rather than invented', (() => {
+  const a = AN.answer('who was Napoleon Bonaparte');
+  return a.ok === false && /rather say so than guess/i.test(a.text);
+})());
+ok('and a refusal still offers something useful to do', (() => {
+  const a = AN.answer('who was Napoleon Bonaparte');
+  return /practise/i.test(a.text);
+})());
+ok('an empty question does not produce a refusal message', (() => {
+  const a = AN.answer('');
+  return a.ok === false && /ask me anything/i.test(a.text);
+})());
+ok('no handler throws on hostile input', (() => {
+  return ['', '?????', '<script>alert(1)</script>', 'x'.repeat(400),
+          '0/0', 'what is + + +', '99999999 x 99999999']
+    .every((q) => { try { return typeof AN.answer(q).text === 'string'; }
+                    catch (e) { return false; } });
+})());
+
+/* End to end through the provider, which is what the UI actually calls. */
+/* provider.generate() resolves a Promise, and this harness is synchronous.
+   Temporarily removing window.Promise makes settled() return its synchronous
+   thenable instead — which also exercises the no-Promise fallback path for
+   real rather than leaving it untested. */
+function offlineAnswer(question) {
+  /* `sandbox.window.Promise` reads as falsy from OUT here, but inside the VM
+     realm it is the real intrinsic — so capturing it from the host and writing
+     it back would blank it for every later test. Capture from inside. */
+  const realPromise = vm.runInContext('Promise', sandbox);
+  sandbox.Promise = undefined;
+  let got = null;
+  try {
+    WW.tutorProvider.providers.offline
+      .generate('answer', { question })
+      .then((r) => { got = r; });
+  } finally {
+    sandbox.Promise = realPromise;
+  }
+  return got;
+}
+ok('the OFFLINE provider now answers questions instead of shrugging', (() => {
+  const got = offlineAnswer('why is 8 x 4 32?');
+  return !!got && got.ok === true && /repeated addition/i.test(got.text);
+})());
+ok('and reports an honest non-answer for something it cannot do', (() => {
+  const got = offlineAnswer('who was Napoleon');
+  return !!got && got.ok === false && got.text.length > 20;
+})());
+ok('the synchronous no-Promise fallback works at all',
+  !!offlineAnswer('what is 7 + 5'));
+ok('the old shrug is gone from the codebase',
+  !/can.t look that one up/i.test(read('js/tutor/provider.js')));
+
+/* Screening still applies to a locally produced answer. */
+ok('a locally produced answer is still screened before display', (() => {
+  const src = read('js/tutor/session.js');
+  /* the verdict of inspectOutput must win regardless of provider ok-ness */
+  return /out\.ok \? \(out\.text/.test(src);
+})());
+ok('every glossary entry passes the output safety rules',
+  Object.keys(AN.GLOSSARY).every((k) => S2.inspectOutput(AN.GLOSSARY[k].text).ok),
+  Object.keys(AN.GLOSSARY).filter((k) => !S2.inspectOutput(AN.GLOSSARY[k].text).ok).join(','));
+ok('every concept answer passes the output safety rules',
+  AN.CONCEPTS.every((c) => S2.inspectOutput(c.text).ok));
+ok('no answer asks the child for personal information',
+  Object.keys(AN.GLOSSARY).every((k) => !S2.asksForPII(AN.GLOSSARY[k].text)));
+
+section('29. WonderTutor: talking out loud');
+const VC = WW.tutorVoiceChat;
+
+freshTutor(2);
+ok('talking is OFF for a brand-new Explorer', VC.isEnabled() === false);
+ok('and is refused until a grown-up consents',
+  VC.available().reason === 'no_consent' || VC.available().reason === 'unsupported');
+ok('consent is versioned, so a stored yes says which wording was agreed',
+  typeof VC.CONSENT_VERSION === 'string' && VC.CONSENT_VERSION.length > 4);
+
+VC.grantConsent();
+ok('a grown-up can turn talking on', VC.isEnabled() === true);
+ok('consent is recorded with a timestamp and a version', (() => {
+  const v = TP.data().voiceChat;
+  return v.enabled === true && !!v.consentedAt && v.consentVersion === VC.CONSENT_VERSION;
+})());
+ok('consent survives a reload', (() => {
+  TP._data = null; TP.load();
+  return VC.isEnabled() === true;
+})());
+ok('a grown-up can revoke it again', (() => {
+  VC.revokeConsent();
+  return VC.isEnabled() === false && TP.data().voiceChat.consentedAt === null;
+})());
+ok('revoked consent survives a reload too', (() => {
+  TP._data = null; TP.load();
+  return VC.isEnabled() === false;
+})());
+ok('a consent granted under OLD wording does not count', (() => {
+  VC.grantConsent();
+  TP.data().voiceChat.consentVersion = 'voice-v0-ancient';
+  TP.save();
+  return VC.isEnabled() === false;
+})());
+VC.revokeConsent();
+
+ok('resetting the profile also clears voice consent', (() => {
+  VC.grantConsent();
+  TP.reset();
+  return VC.isEnabled() === false;
+})());
+
+/* ---- the voice budget: the one cost that can exceed the subscription ---- */
+freshTutor(2);
+WW.entitlements.apply({ status: 'plus', provider: 'apple' });
+VC.grantConsent();
+
+ok('a fresh subscriber has their full talking allowance', (() => {
+  const b = WW.tutor.voiceBudget();
+  return b.allowed === true && b.usedTodaySec === 0 &&
+         b.leftSec === WW.tutor.ACCESS.plusVoiceMinutesPerDay * 60;
+})());
+ok('spoken seconds are metered, not trusted', (() => {
+  WW.tutor.recordVoice(300);
+  const b = WW.tutor.voiceBudget();
+  return b.usedTodaySec === 300 && b.usedMonthSec === 300;
+})());
+ok('the daily limit stops a binge', (() => {
+  freshTutor(2);
+  WW.entitlements.apply({ status: 'plus', provider: 'apple' });
+  VC.grantConsent();
+  WW.tutor.recordVoice(WW.tutor.ACCESS.plusVoiceMinutesPerDay * 60);
+  const b = WW.tutor.voiceBudget();
+  return b.allowed === false && b.reason === 'daily';
+})());
+ok('and the voice client refuses to open once it is spent', (() => {
+  /* available() checks capability BEFORE budget, which is the right order —
+     there is no point costing a budget on a device that cannot do WebRTC at
+     all. This sandbox has no RTCPeerConnection, so stub just enough support
+     for the budget branch to be the one that answers. */
+  const hadRTC = sandbox.window.RTCPeerConnection;
+  const hadNav = sandbox.window.navigator;
+  sandbox.window.RTCPeerConnection = function () {};
+  sandbox.window.navigator = { mediaDevices: { getUserMedia: function () {} } };
+  sandbox.window.fetch = sandbox.window.fetch || function () {};
+  const reason = VC.available().reason || '';
+  sandbox.window.RTCPeerConnection = hadRTC;
+  sandbox.window.navigator = hadNav;
+  return /^budget/.test(reason);
+})());
+ok('the monthly limit stops sustained use going underwater', (() => {
+  freshTutor(2);
+  WW.entitlements.apply({ status: 'plus', provider: 'apple' });
+  VC.grantConsent();
+  const d = TP.data();
+  /* spread the monthly allowance over past days so the daily window is clear */
+  d.voiceLog = [];
+  for (let i = 1; i <= 10; i++) {
+    d.voiceLog.push({ at: Date.now() - i * 86400000 - 1000,
+                      sec: WW.tutor.ACCESS.plusVoiceMinutesPerMonth * 6 });
+  }
+  TP.save();
+  const b = WW.tutor.voiceBudget();
+  return b.allowed === false && b.reason === 'monthly';
+})());
+ok('old talking time falls out of the window', (() => {
+  freshTutor(2);
+  WW.entitlements.apply({ status: 'plus', provider: 'apple' });
+  VC.grantConsent();
+  TP.data().voiceLog = [{ at: Date.now() - 40 * 86400000, sec: 99999 }];
+  TP.save();
+  return WW.tutor.voiceBudget().allowed === true;
+})());
+ok('a free Explorer gets no talking time at all', (() => {
+  freshTutor(2);
+  WW.entitlements.clear();
+  VC.grantConsent();
+  const b = WW.tutor.voiceBudget();
+  return b.allowed === false && b.reason === 'plus';
+})());
+ok('the voice log records durations only, never what was said', (() => {
+  freshTutor(2);
+  WW.entitlements.apply({ status: 'plus', provider: 'apple' });
+  WW.tutor.recordVoice(60);
+  const e = TP.data().voiceLog[0];
+  return Object.keys(e).sort().join(',') === 'at,sec';
+})());
+ok('the budget is configurable, not hard-coded in the UI',
+  typeof WW.tutor.ACCESS.plusVoiceMinutesPerDay === 'number' &&
+  typeof WW.tutor.ACCESS.plusVoiceMinutesPerMonth === 'number');
+ok('the voice client meters elapsed session time, not just held time',
+  /_startMeter|_stopMeter/.test(read('js/tutor/realtime.js')));
+ok('the child is never shown a number of minutes', (() => {
+  const scr = read('js/tutor/screen.js');
+  /* the child-facing branch must talk about a rest, not a quantity */
+  return /voice needs a rest/i.test(scr) &&
+         !/minutes (left|remaining)/i.test(scr);
+})());
+WW.entitlements.clear();
+
+/* The client must never hold a key, and must never call the provider
+   directly for audio either. */
+const rtSrc = read('js/tutor/realtime.js');
+ok('the voice client holds no API key',
+  !/sk-[A-Za-z0-9]{16,}|OPENAI_API_KEY/i.test(rtSrc));
+ok('it authenticates with an ephemeral secret from our own server',
+  /\/api\/tutor-realtime/.test(rtSrc) && /client_secrets/.test(rtSrc) === false);
+ok('the microphone starts disabled, not live',
+  /track\.enabled = false/.test(rtSrc));
+ok('push-to-talk is explicit: hold enables, release disables', (() => {
+  const hold = /hold: function[\s\S]{0,400}?enabled = true/.test(rtSrc);
+  const rel = /release: function[\s\S]{0,400}?enabled = false/.test(rtSrc);
+  return hold && rel;
+})());
+ok('releasing commits the turn rather than leaving the mic open',
+  /input_audio_buffer\.commit/.test(rtSrc));
+ok('stopping tears the track down, not just mutes it',
+  /micTrack\.stop\(\)/.test(rtSrc));
+ok('spoken transcripts are screened like typed text',
+  /inspectInput/.test(rtSrc) && /inspectOutput/.test(rtSrc));
+ok('unsafe tutor speech is cancelled mid-utterance',
+  /response\.cancel/.test(rtSrc));
+ok('no audio is written to storage anywhere in the voice client',
+  !/localStorage|indexedDB|MediaRecorder/i.test(rtSrc));
+
+/* The server endpoint is independently gated. */
+const rtFn = read('functions/api/tutor-realtime.js');
+ok('the server refuses voice unless TUTOR_REALTIME_ENABLED is exactly true',
+  /TUTOR_REALTIME_ENABLED !== 'true'/.test(rtFn));
+ok('voice has its own switch, separate from the text tutor key',
+  /TUTOR_REALTIME_ENABLED/.test(rtFn) && /OPENAI_API_KEY/.test(rtFn));
+ok('the server refuses a request that does not claim parent consent',
+  /parentConsent !== true/.test(rtFn));
+ok('automatic turn detection is disabled server-side, so there is no open mic',
+  /turn_detection: null/.test(rtFn));
+ok('the real API key is only ever used in an Authorization header', (() => {
+  /* Every mention must be inside `Bearer ${env.OPENAI_API_KEY}`. */
+  const mentions = rtFn.match(/env\.OPENAI_API_KEY/g) || [];
+  const inHeader = rtFn.match(/Bearer \$\{env\.OPENAI_API_KEY\}/g) || [];
+  return mentions.length === inHeader.length + 1;   /* +1 for the presence check */
+})());
+ok('only the ephemeral secret is returned to the browser',
+  /ok: true, value: value/.test(rtFn));
+ok('the spoken tutor gets the same hard rules as the written one',
+  /NEVER ask for/.test(rtFn) && /not a human/i.test(rtFn) &&
+  /diagnos/i.test(rtFn) && /secret/i.test(rtFn));
+ok('the spoken tutor is told to defer to a grown-up on anything worrying',
+  /grown-up they trust/.test(rtFn));
+
+/* Leaving the tutor must kill a live session. */
+ok('leaving the tutor screen stops any voice session', (() => {
+  const scr = read('js/tutor/screen.js');
+  return /leave: function[\s\S]{0,400}?tutorVoiceChat\.stop\(\)/.test(scr);
+})());
+
+/* The policy must have shipped with the feature, not after it. */
+const priv = read('privacy.html');
+ok('the privacy policy documents talking out loud',
+  /Talking out loud with WonderTutor/.test(priv));
+ok('it states plainly that speech is sent to a provider',
+  /their speech is sent to our AI provider/i.test(priv));
+ok('it no longer claims we never use the microphone',
+  !/Location data, contacts, camera, microphone or photos/.test(priv));
+ok('it says the feature is off by default and revocable',
+  /off by default/i.test(priv) && /turn it off at any time/i.test(priv));
+ok('it documents what WonderTutor sends for ordinary text tutoring',
+  /<h2>WonderTutor<\/h2>/.test(priv) && /does <strong>not<\/strong> contain/.test(priv));
 
 ok('the learning profile lives outside the child\'s save',
   TP.BASE_KEY !== 'wonderworld.save.v1' &&

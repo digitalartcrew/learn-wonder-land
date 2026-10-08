@@ -101,6 +101,7 @@ WonderWorld/
 │   │   ├── emotion.js         expression allow-list + deterministic rules
 │   │   ├── avatar.js          the animated SVG character
 │   │   ├── voice.js           on-device speech only
+│   │   ├── realtime.js        spoken conversation (off by default)
 │   │   ├── provider.js        offline + server adapters (no key in client)
 │   │   ├── assessment.js      the adaptive diagnostic
 │   │   ├── engine.js          skill choice, rewards, access
@@ -122,7 +123,8 @@ WonderWorld/
 │       ├── subscribe.js       POST — stores a parent signup in Cloudflare KV
 │       ├── subscribers.js     GET  — token-protected CSV export
 │       ├── tutor.js           POST — the only path to a text model
-│       └── tutor-emotion.js   POST — Decisions API, picks the tutor's face
+│       ├── tutor-emotion.js   POST — Decisions API, picks the tutor's face
+│       └── tutor-realtime.js  POST — mints ephemeral voice-session tokens
 ├── assets/
 │   ├── icon.svg               app icon (pure SVG — nothing to break)
 │   ├── apple-touch-icon.png   iOS home-screen icon (iOS ignores SVG here)
@@ -178,6 +180,7 @@ WW.tutorSafety     // outbound allow-list, input/output screening
 WW.tutorEmotion    // expression allow-list + deterministic rules
 WW.tutorAvatar     // the animated SVG character
 WW.tutorVoice      // speak/stop/pause/resume — on-device voices only
+WW.tutorVoiceChat  // spoken conversation — consent-gated, push-to-talk, off by default
 WW.tutorProvider   // generate() — offline bank or first-party endpoint
 WW.tutorAssessment // the adaptive diagnostic
 WW.tutor           // nextSkill(), access(), rewards
@@ -386,7 +389,7 @@ node tools/browser-test.js http://127.0.0.1:8111
 >   node tools/browser-test.js http://localhost:8111
 > ```
 
-**`logic-test.js` (294 checks)** verifies save/load round-trips and
+**`logic-test.js` (350 checks)** verifies save/load round-trips and
 forward-compatible merging, level curves, unlock thresholds, crystal
 restoration, 50 000 generated maths questions (answer always present, no
 duplicate options, arithmetic actually correct), story content integrity, that
@@ -399,7 +402,7 @@ that each one renders valid SVG with a screen-reader description and references
 no external files, and that the celebration audio degrades safely when there is
 no AudioContext.
 
-**`browser-test.js` (312 checks)** plays the game: creates a character, crosses
+**`browser-test.js` (341 checks)** plays the game: creates a character, crosses
 the bridge, deliberately answers wrong to confirm hints appear and nothing
 "fails" the child, reads a whole story chapter including spelling and sentence
 building, runs the plant/magnet/weather experiments, builds a city and watches
@@ -463,6 +466,14 @@ the whole first-run flow. Full mapping in
 | Reduced motion stops the movement but the face still changes | browser |
 | Existing saves, monetization, entitlements and free worlds are untouched | logic §28 |
 | Tutoring rewards cannot be farmed by repeating one lesson | logic §28 |
+| **Talking out loud is off until a grown-up consents, and is revocable** | logic §29, browser |
+| A child with no consent is offered no microphone at all | browser |
+| The microphone starts disabled and is push-to-talk only | logic §29 |
+| Leaving the screen kills any live voice session | logic §29, browser |
+| Spoken transcripts are screened like typed text | logic §29 |
+| No audio is stored anywhere, and the API key never reaches the browser | logic §29 |
+| The voice budget bites daily and monthly, and the child never sees a number | logic §29, browser |
+| The privacy policy shipped with the feature, not after it | logic §29 |
 
 ---
 
@@ -807,6 +818,7 @@ inside the child's save**.
 | `js/tutor/emotion.js` | Expression allow-list + deterministic rules |
 | `js/tutor/avatar.js` | `WW.tutorAvatar` — the SVG character |
 | `js/tutor/voice.js` | On-device speech only |
+| `js/tutor/realtime.js` | `WW.tutorVoiceChat` — spoken conversation, off by default |
 | `js/tutor/provider.js` | Offline and server adapters |
 | `js/tutor/assessment.js` | The adaptive diagnostic |
 | `js/tutor/engine.js` | `WW.tutor` — skill choice, rewards, access |
@@ -840,12 +852,37 @@ WW.tutor.ACCESS = {
 A child never sees a price, a token counter or a quota. At the door they get
 the same friendly handover as every other premium feature.
 
+### Talking out loud
+
+WonderTutor can hold a spoken conversation — the child holds a button, speaks,
+and hears it answer. **This is the only feature in WonderWorld that sends
+anything off the device from the microphone,** and it is gated three times:
+
+1. **Server** — `TUTOR_REALTIME_ENABLED` must be explicitly `true`. Off until
+   the privacy review is done, so the code can ship before the decision does.
+2. **Parent** — the parental gate plus versioned, revocable consent on a page
+   that says plainly what is being agreed to.
+3. **Child** — push-to-talk. The microphone track is disabled between turns,
+   genuinely off rather than live and ignored, with a red indicator and a
+   written status line whenever it is on.
+
+Nothing is recorded or stored by us; audio goes browser↔provider directly.
+Transcripts are screened exactly like typed text, and unsafe speech is cut
+mid-utterance.
+
+It also carries a real budget, because unlike typed tutoring it costs about
+3–4 cents a *minute*: 20 minutes a day and 120 a month for subscribers, none
+for free Explorers. The child never sees a number — out of allowance reads as
+*"My talking voice needs a rest."* See
+[docs/TUTOR_PRICING.md §5a](docs/TUTOR_PRICING.md#5a-the-voice-budget).
+
 ### Failure mode
 
-No internet, no key, a dead endpoint, a 503, no speech synthesis — the tutor
-keeps teaching from its offline bank, and the rest of WonderWorld is untouched.
-When there is genuinely nothing to do: *"WonderTutor is resting right now. You
-can keep exploring WonderWorld!"*
+No internet, no key, a dead endpoint, a 503, no speech synthesis, a refused
+microphone, a spent voice budget — the tutor keeps teaching from its offline
+bank, and the rest of WonderWorld is untouched. When there is genuinely nothing
+to do: *"WonderTutor is resting right now. You can keep exploring
+WonderWorld!"*
 
 ---
 

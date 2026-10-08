@@ -19,6 +19,7 @@ script. Costs and pricing are in **[TUTOR_PRICING.md](TUTOR_PRICING.md)**.
 11. [Expressions and the Decisions API](#11-expressions-and-the-decisions-api)
 12. [The animated character](#12-the-animated-character)
 13. [Voice](#13-voice)
+13a. [Real-time voice](#13a-real-time-voice)
 14. [Child safety](#14-child-safety)
 15. [Privacy](#15-privacy)
 16. [Cost controls](#16-cost-controls)
@@ -96,6 +97,7 @@ Load order is fixed in `index.html` and mirrored in `tools/logic-test.js`:
 | `js/tutor/emotion.js` | `WW.tutorEmotion` — expression allow-list + deterministic rules |
 | `js/tutor/avatar.js` | `WW.tutorAvatar` — the SVG character and its states |
 | `js/tutor/voice.js` | `WW.tutorVoice` — on-device speech only |
+| `js/tutor/realtime.js` | `WW.tutorVoiceChat` — spoken conversation over WebRTC |
 | `js/tutor/provider.js` | `WW.tutorProvider` — offline and server adapters |
 | `js/tutor/assessment.js` | `WW.tutorAssessment` — the adaptive diagnostic |
 | `js/tutor/engine.js` | `WW.tutor` — skill choice, rewards, access |
@@ -103,9 +105,10 @@ Load order is fixed in `index.html` and mirrored in `tools/logic-test.js`:
 | `js/tutor/screen.js` | `WW.Screens.tutor` — the UI |
 | `functions/api/tutor.js` | The only path to a text model |
 | `functions/api/tutor-emotion.js` | The Decisions API call for expressions |
+| `functions/api/tutor-realtime.js` | Mints ephemeral tokens for voice sessions |
 
-Changes to pre-existing files are additive only: a screen section and 13 script
-tags in `index.html`, those scripts in the `sw.js` shell (VERSION → `ww-v4`), a
+Changes to pre-existing files are additive only: a screen section and 14 script
+tags in `index.html`, those scripts in the `sw.js` shell (VERSION → `ww-v5`), a
 `wonder-tutor` entry in `FEATURES`, a map entry point and a report card in
 `js/screens.js`, a `tutor-back` handler and a `leave()` call in `js/core.js`,
 one profile load in `game.js`, and tutor styles appended to `style.css`.
@@ -166,7 +169,7 @@ WW.learningProfile.band('spelling');         // 'approaching'
 
 ### The taxonomy
 
-Six domains, 34 skills, each with a grade range and prerequisites:
+Six domains, 39 skills, each with a grade range and prerequisites:
 
 | Domain | Skills |
 |---|---|
@@ -520,6 +523,129 @@ app needs a privacy review that has not been done. A text box is enough.
 
 ---
 
+## 13a. Real-time voice
+
+Spoken, two-way conversation with the tutor. `WW.tutorVoiceChat`, backed by
+`/api/tutor-realtime` and the Realtime API over WebRTC.
+
+> **This is the only feature in WonderWorld that sends anything off the
+> device from the microphone.** Everything else in this document is built on
+> the opposite premise. It is gated three independent times and it is off by
+> default.
+
+### The three gates
+
+| Gate | Where | What it does |
+|---|---|---|
+| **1. Server** | `TUTOR_REALTIME_ENABLED` must be exactly `'true'` | Off until the privacy review and the published policy update are actually done. An API key alone is not enough — text and voice have different consequences and do not share a switch. |
+| **2. Parent** | Parental gate (`multiply-adjust`) + versioned consent | A grown-up reads what is being agreed to and acts. Stored per Explorer, revocable from the dashboard. |
+| **3. Child** | Push-to-talk | The audio track is `enabled = false` except while the button is physically held. |
+
+All three must pass. `WW.tutorVoiceChat.available()` is the single question the
+UI asks, and it checks capability, consent and budget in that order.
+
+### Push-to-talk, not an open microphone
+
+`turn_detection` is `null` in the session config, so the model never decides on
+its own that it is being spoken to. A turn is explicit:
+
+```
+hold    → track.enabled = true            the child speaks
+release → track.enabled = false
+          input_audio_buffer.commit       "that was my turn"
+          response.create                 "your go"
+```
+
+The mic is genuinely off between turns rather than live and ignored. Releasing
+outside the button, losing focus, `pointercancel` and leaving the screen all
+end the turn — a microphone left live because a gesture ended somewhere
+unexpected is exactly the bug worth designing out, so every exit calls
+`release()` or `stop()`.
+
+`WW.Screens.tutor.leave()` and `WW.Nav.go()` both call
+`WW.tutorVoiceChat.stop()`, which disables **and** `.stop()`s the track rather
+than only muting it.
+
+### The connection, and the one external host
+
+```
+browser → POST /api/tutor-realtime          our origin, mints the token
+        ← { value: "ek_…" }                 ephemeral, minutes
+browser → POST api.openai.com/v1/realtime/calls   SDP offer, ephemeral key
+        ↔ audio over WebRTC                 direct, peer to peer
+```
+
+Our `OPENAI_API_KEY` is used once, server-side, and never reaches the browser.
+
+**This changed a project invariant worth stating plainly.** Before voice, no
+client file named an external host — every request went to our own origin.
+WebRTC requires the browser to post its SDP offer directly to the provider, so
+`js/tutor/realtime.js` now names `api.openai.com`. The alternative, proxying
+audio through our own Worker, would put us *inside* the audio path, which is
+worse for privacy and costs more. The tests were changed from "no external
+URLs" to "exactly one, in exactly one file, for exactly one purpose", and they
+assert that no other client file reaches any external host.
+
+### Safety out loud
+
+The spoken tutor gets the written tutor's rules plus the ones that only matter
+in conversation, as session `instructions`:
+
+- Short turns. Stop and let the child answer. Never talk over them.
+- Never ask for, repeat, or **acknowledge** personal information. A child will
+  volunteer their name out loud far more readily than they will type it.
+- Never claim to be human; if asked, say plainly it is a helper in the game.
+- Never suggest secrecy, never mention links or buying anything.
+- Never diagnose anything.
+- **If a child says something suggesting they are in danger, do not counsel
+  them** — say a trusted grown-up should be told, and stop.
+
+Transcripts are screened with the same `tutorSafety` functions as typed text.
+A tutor utterance that fails `inspectOutput` triggers `response.cancel`,
+cutting the audio mid-sentence rather than letting it finish.
+
+### What is and is not stored
+
+Nothing is recorded. No audio is written to disk, buffered or uploaded by us,
+and the audio does not pass through our Function at all — it goes browser↔
+provider. There is no `MediaRecorder` anywhere in the project, and a test
+asserts it.
+
+Transcripts live in `WW.tutorSession._turns` for the lesson and are discarded
+when it ends. The only thing persisted is `voiceLog` — `{ at, sec }` entries,
+durations only, trimmed to 31 days, for the budget.
+
+### The budget
+
+Voice is the one feature whose cost can exceed the subscription: roughly 3–4
+cents a minute against 0.013 cents for a typed exchange. So unlike the lesson
+cap, this is an economic limit rather than an abuse backstop.
+
+```js
+WW.tutor.ACCESS.plusVoiceMinutesPerDay   = 20;
+WW.tutor.ACCESS.plusVoiceMinutesPerMonth = 120;
+WW.tutor.ACCESS.freeVoiceMinutes         = 0;
+```
+
+Metered from when the data channel opens — not from when the button is held,
+because the model streams audio back during the gaps. Checked every 5 seconds,
+and counted on teardown *first* so a crash still bills the seconds used.
+
+**The child never sees a number.** Out of allowance reads as *"My talking voice
+needs a rest for now — but I can still teach you here!"*. A free Explorer whose
+parent consented gets a *different* message — the WonderWorld+ handover —
+because calling a plan boundary "a rest" would be a small lie. Full numbers are
+in [TUTOR_PRICING.md §5a](TUTOR_PRICING.md#5a-the-voice-budget).
+
+### Degrading
+
+No consent, server switch off, no WebRTC, microphone denied, token refused,
+connection lost, budget spent — every path leaves the typed tutor working
+exactly as before, and says something true about why. Voice is never required
+to learn.
+
+---
+
 ## 14. Child safety
 
 `js/tutor/safety.js`, mirrored server-side in `functions/api/tutor.js`. A
@@ -565,10 +691,17 @@ pedagogical failure for this age, not a safety one.
 
 ## 15. Privacy
 
-The monetization layer added one network call. WonderTutor adds two — both
-first-party endpoints on this origin. Tests assert that every literal `fetch`
-target is one of `api/subscribe`, `/api/tutor`, `/api/tutor-emotion`, and that
-no `fetch` anywhere names an external host.
+The monetization layer added one network call. WonderTutor adds three, all
+first-party endpoints on this origin: `/api/tutor`, `/api/tutor-emotion` and
+`/api/tutor-realtime`. Tests assert every literal `fetch` target is one of
+those or `api/subscribe`.
+
+**One exception, introduced by voice.** `js/tutor/realtime.js` posts an SDP
+offer directly to `api.openai.com/v1/realtime/calls`, because that is how
+WebRTC works — proxying audio through our own Worker would put us inside the
+audio path. It is the only external host named anywhere in the client, it is
+quarantined to that one file, and tests assert no other client file reaches any
+external host. See [§13a](#13a-real-time-voice).
 
 ### What is sent to a model
 
@@ -634,16 +767,26 @@ reliably.** That single rule is most of the cost model.
 | Answering a child's own question | Model |
 | Re-explaining after difficulty | Model |
 
-`WW.tutorProvider.shouldAsk(intent, skillId)` is the gate. `WORTH_ASKING` is
-`['answer', 'explain_again', 'lesson']`, and `lesson` only passes for skills in
-`tutorContent.AI_PREFERRED` — comprehension, main idea, inference, vocabulary,
-where prose beats a generator. Arithmetic never costs an API call, and there is
-a test for that.
+`WW.tutorProvider.shouldAsk(intent)` is the gate. `WORTH_ASKING` is
+`['answer', 'explain_again', 'lesson', 'encourage']` — every teaching intent.
+Everything NOT on that list stays deterministic, and there are tests asserting
+that generating and scoring questions never costs a call.
 
-**No conversation history is sent.** Each call carries a small structured
-context, not a transcript. History-passing grows input tokens linearly with
-session length, so turn 20 would cost 20× turn 1 — about a 40× multiplier over a
-session — and would also be the worst thing to do with a child's words.
+An earlier version restricted lessons to four "prose" skills and gave the other
+thirty a canned sentence. That was a cost decision taken before the cost was
+measured; it saved about two cents a month and made the tutor sound like a
+worksheet, so it was removed.
+
+**History is bounded, not absent.** Six turns and 700 characters, capped on the
+client in `tutorSafety.buildContext()` and re-capped on the server, so the
+tutor has continuity without accumulating a transcript. Unbounded history would
+grow input tokens linearly with session length — turn 20 costing 20× turn 1 —
+and would be the worst thing to do with a child's words. Bounded history is a
+flat ~200 tokens forever.
+
+**Spoken conversation is the exception** and has its own hard budget, because
+unlike text it can cost more than the subscription. See
+[§13a](#13a-real-time-voice).
 
 `WW.learningProfile.countUsage()` records `aiCalls`, `aiTokensIn`,
 `aiTokensOut`, `decisionCalls` and `offlineFallbacks` per Explorer. Counts and
@@ -669,6 +812,10 @@ validate the cost model, not enough to profile a child.
 | No on-device voice for the language | Silent rather than cloud or wrong-language. |
 | Cloudflare Function fails | Offline fallback. |
 | Rate limited | Offline fallback. |
+| `TUTOR_REALTIME_ENABLED` not set | Voice is simply not offered. Typed tutoring unaffected. |
+| Microphone permission denied | "I can't hear the microphone. You can still type to me!" |
+| Voice token refused / connection lost | Falls back to typed tutoring, says so. |
+| Voice budget spent | "My talking voice needs a rest" — typed tutoring continues. |
 
 When there is genuinely nothing to teach, the child sees *"WonderTutor is
 resting right now. You can keep exploring WonderWorld!"* and a button back to
@@ -796,9 +943,13 @@ question:
 
 ```js
 {
-  freeAssessment: true,      // the full diagnostic, free
-  freeLessons: 1,            // then the premium door
-  plusLessonsPerDay: 40      // fair use, for subscribers
+  freeAssessment: true,            // the full diagnostic, free
+  freeLessons: 1,                  // then the premium door
+  plusLessonsPerDay: 40,           // fair use, for subscribers
+
+  plusVoiceMinutesPerDay: 20,      // economic limits, not abuse backstops
+  plusVoiceMinutesPerMonth: 120,
+  freeVoiceMinutes: 0              // voice is never in the free demo
 }
 ```
 
@@ -915,6 +1066,27 @@ how this ships today.
 
    Without it the cap is skipped and only per-request limits apply.
 
+### To enable spoken conversation
+
+**Only after the privacy review and the published policy update.** The switch
+exists so that shipping the code and enabling the feature are two separate
+decisions.
+
+| Variable | Value |
+|---|---|
+| `TUTOR_REALTIME_ENABLED` | `true` |
+
+Optional:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TUTOR_REALTIME_MODEL` | `gpt-realtime-2.1` | Realtime model |
+| `TUTOR_REALTIME_VOICE` | `marin` | Output voice |
+| `TUTOR_REALTIME_CAP` | `40` | Sessions per IP per day |
+
+A grown-up must still consent on the device; the server switch only makes the
+feature reachable.
+
 ### To enable the Decisions API expression layer
 
 Set `WW.tutorEmotion.useDecisionsAPI = true` in `js/tutor/emotion.js`. It is
@@ -933,8 +1105,8 @@ WW.learningProfile.data().usage    // aiCalls, tokens, decisionCalls, fallbacks
 ## 24. Tests
 
 ```bash
-node tools/logic-test.js                            # 294 assertions
-node tools/browser-test.js http://localhost:8111    # 312 assertions
+node tools/logic-test.js                            # 350 assertions
+node tools/browser-test.js http://localhost:8111    # 341 assertions
 ```
 
 > If the browser run fails with *"Executable doesn't exist"*, the pinned
@@ -945,8 +1117,9 @@ node tools/browser-test.js http://localhost:8111    # 312 assertions
 >   node tools/browser-test.js http://localhost:8111
 > ```
 
-Suites 22–28 of the logic tests are WonderTutor, plus a dedicated browser
-block that drives the whole first-run flow in a real browser.
+Suites 22–29 of the logic tests are WonderTutor, plus a dedicated browser
+block that drives the whole first-run flow and the voice consent gates in a
+real browser.
 
 | # | Requirement | Where |
 |---|---|---|
@@ -978,13 +1151,43 @@ block that drives the whole first-run flow in a real browser.
 | 26 | Context excludes nickname/email/location | logic 27, browser |
 | 27 | AI usage measurable without identifying the child | logic 27 |
 
+Voice adds its own block (logic 29 + browser):
+
+| Requirement | Where |
+|---|---|
+| Voice is OFF for a new Explorer | logic 29, browser |
+| A child with no consent is offered no microphone at all | browser |
+| Enabling requires the parental gate, not a toggle | browser |
+| Consent is versioned; an old version does not count | logic 29 |
+| Consent survives reload and is revocable | logic 29, browser |
+| Resetting the profile clears consent | logic 29 |
+| The microphone starts disabled and is push-to-talk only | logic 29 |
+| Releasing commits the turn rather than leaving the mic open | logic 29 |
+| Stopping tears the track down, not just mutes it | logic 29 |
+| Leaving the screen kills a live session | logic 29, browser |
+| Spoken transcripts are screened like typed text | logic 29 |
+| Unsafe tutor speech is cancelled mid-utterance | logic 29 |
+| No audio is written to storage anywhere | logic 29 |
+| The server refuses voice unless explicitly enabled | logic 29 |
+| The real API key never reaches the browser | logic 29 |
+| Only one external host is named, in one file | logic 9 |
+| A free Explorer gets the premium door, not a "rest" | logic 29, browser |
+| The daily and monthly budgets both bite | logic 29 |
+| The child is never shown a minute count | logic 29, browser |
+| The privacy policy shipped with the feature | logic 29 |
+
 ---
 
 ## 25. Production risks
 
 | Risk | Standing | Mitigation |
 |---|---|---|
+| **A child's voice is sent to a third party** | **Real, and inherent to the feature** | Three gates, push-to-talk, nothing recorded by us, disclosed in `privacy.html`, revocable. This is a trade-off, not a solved problem — see below. |
+| **Voice cost exceeding revenue** | Guarded | Metered, daily + monthly caps. [TUTOR_PRICING.md §5a](TUTOR_PRICING.md#5a-the-voice-budget) |
+| **The 700-tokens-per-minute assumption** | **Unverified** | The voice budget scales linearly with it. Measure against the first invoice. |
+| **COPPA / App Store review of voice in a kids' app** | **Needs legal review** | Microphone access in the Kids Category is scrutinised. `TUTOR_REALTIME_ENABLED` is off so the code can ship before the review concludes. |
 | **Model says something unsuitable** | Real, inherent | Rejected server- and client-side; prompt is the third and weakest layer. Residual risk is non-zero. |
+| **Model says something unsuitable OUT LOUD** | Real, harder | Transcript screening triggers `response.cancel`, but audio is streaming — a few words may be heard before it cuts. There is no way to pre-screen speech that has not been generated yet. |
 | **Beta-language output is subtly wrong** | **Open** | Disclosed in the UI and the parent report. Needs §19. |
 | **Offline bank is English-only** | **Open** | A beta language falls back to English content. Honest, not good. |
 | **No human review of generated lessons** | **Open** | No sampling or review pipeline exists. See below. |
@@ -995,8 +1198,15 @@ block that drives the whole first-run flow in a real browser.
 | Prompt injection via the child's question | Guarded | Input screening, output screening, no tool access, no state mutation |
 | Parent expects a diagnosis | Guarded | Explicit disclaimer in the report; language forbidden in output |
 
-**The honest gap:** there is no human-review pipeline for model-generated
-lessons. Safety filters catch categories of bad output; they do not catch a
+**The honest gap about voice:** screening a transcript is inherently behind the
+audio. `response.cancel` cuts the stream as soon as a violation is detected,
+but the child may hear the beginning of it. Text can be screened before it is
+displayed; speech cannot be screened before it is heard. That is a real
+limitation of conversational voice for children and it should be stated to
+parents rather than engineered around, because it cannot be engineered away.
+
+**The honest gap about lessons:** there is no human-review pipeline for
+model-generated lessons. Safety filters catch categories of bad output; they do not catch a
 confidently wrong explanation of fractions. For English the offline bank covers
 the main skills, so exposure is limited to `AI_PREFERRED` skills and
 child-initiated questions — but a sampling-and-review process should exist
@@ -1004,16 +1214,22 @@ before this is marketed as a tutor rather than a study aid.
 
 ### Recommended next sprint
 
-1. **Raise `freeLessons` to 3** and ship the pricing decision from
+1. **Verify the voice cost assumption against a real invoice** before enabling
+   `TUTOR_REALTIME_ENABLED` for anyone but yourself. The budget is derived from
+   an unpublished token-per-minute figure; everything in §5a scales with it.
+2. **Legal/privacy review of voice for the Kids Category**, then publish the
+   `privacy.html` update that is already written, then flip the switch. In that
+   order.
+3. **Raise `freeLessons` to 3** and ship the pricing decision from
    [TUTOR_PRICING.md §8](TUTOR_PRICING.md#8-recommendation).
-2. **Native-speaker validation for one beta language** end to end (Spanish is
+4. **Native-speaker validation for one beta language** end to end (Spanish is
    the obvious first), including a per-language content pack. That turns the
    multilingual claim from architecture into product.
-3. **A lesson-sampling review tool** — dump N generated explanations per skill
+5. **A lesson-sampling review tool** — dump N generated explanations per skill
    for a human to score. Closes the gap above.
-4. **Wire the Decisions API on** behind a flag and measure
+6. **Wire the Decisions API on** behind a flag and measure
    `usage.decisionCalls` against the deterministic rules. If parents and
    children cannot tell the difference, leave it off and keep the latency.
-5. **Connect StoreKit** — unchanged from
+7. **Connect StoreKit** — unchanged from
    [MONETIZATION.md §18](MONETIZATION.md#18-apple-storekit-integration-path),
    and now the tutor makes the subscription worth more.

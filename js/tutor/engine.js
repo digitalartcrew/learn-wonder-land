@@ -72,7 +72,26 @@
       /* Fair use for subscribers. High enough that no ordinary child will
          ever see it; low enough that one runaway device cannot cost a
          fortune. Expressed per day and surfaced to the PARENT only. */
-      plusLessonsPerDay: 40
+      plusLessonsPerDay: 40,
+
+      /* ---- spoken conversation ----
+         Voice is the one feature here with a cost that can actually exceed
+         the subscription. Typed tutoring runs about 2 cents per subscriber
+         per month; real-time audio bills $32/1M tokens in and $64/1M out,
+         which works out around 3-4 cents a MINUTE. Forty voice sessions a
+         month would cost more than a $9.99 subscription nets after Apple's
+         commission.
+
+         So unlike the lesson cap, these are real economic limits rather than
+         abuse backstops, and both apply. The daily one stops a binge; the
+         monthly one stops sustained use from going underwater.
+         See docs/TUTOR_PRICING.md. */
+      plusVoiceMinutesPerDay: 20,
+      plusVoiceMinutesPerMonth: 120,
+
+      /* Voice is never part of the free demo. A free Explorer has not had a
+         grown-up agree to anything, and it is the most expensive thing here. */
+      freeVoiceMinutes: 0
     },
 
     /* Why the tutor is or is not open. `blockedBy` mirrors the vocabulary
@@ -99,6 +118,73 @@
                  demoLeft: Tutor.ACCESS.freeLessons - used };
       }
       return { allowed: false, blockedBy: 'plus', demo: true, demoLeft: 0 };
+    },
+
+    /* ---------- voice budget ----------
+       Spoken minutes, counted against both windows. Returned in seconds so
+       the caller never has to guess at rounding.
+
+       The child is NEVER shown these numbers. When the budget runs out they
+       get "my voice needs a rest" and the typed tutor, which teaches exactly
+       as well. The figures belong in the grown-ups dashboard. */
+    voiceBudget: function () {
+      var E = WW.entitlements;
+      var plus = !E || E.isPlus();
+      var A = Tutor.ACCESS;
+
+      if (!plus) {
+        return { allowed: A.freeVoiceMinutes > 0, reason: 'plus',
+                 usedTodaySec: 0, usedMonthSec: 0,
+                 dayLimitSec: A.freeVoiceMinutes * 60, monthLimitSec: A.freeVoiceMinutes * 60,
+                 leftSec: A.freeVoiceMinutes * 60 };
+      }
+
+      var d = Profile.data();
+      var now = Date.now();
+      var log = d.voiceLog || [];
+      var dayAgo = now - 86400000;
+      var monthAgo = now - 30 * 86400000;
+
+      var usedDay = 0, usedMonth = 0;
+      log.forEach(function (e) {
+        if (!e || !e.at || !e.sec) return;
+        if (e.at > monthAgo) usedMonth += e.sec;
+        if (e.at > dayAgo) usedDay += e.sec;
+      });
+
+      var dayLimit = A.plusVoiceMinutesPerDay * 60;
+      var monthLimit = A.plusVoiceMinutesPerMonth * 60;
+      var leftDay = Math.max(0, dayLimit - usedDay);
+      var leftMonth = Math.max(0, monthLimit - usedMonth);
+      var left = Math.min(leftDay, leftMonth);
+
+      return {
+        allowed: left > 0,
+        reason: left > 0 ? null : (leftDay <= 0 ? 'daily' : 'monthly'),
+        usedTodaySec: usedDay,
+        usedMonthSec: usedMonth,
+        dayLimitSec: dayLimit,
+        monthLimitSec: monthLimit,
+        leftSec: left
+      };
+    },
+
+    /* Record a completed stretch of talking. Called by the voice client when
+       a session closes, so a session that crashes still gets counted on the
+       next open rather than being free. */
+    recordVoice: function (seconds) {
+      var sec = Math.max(0, Math.round(Number(seconds) || 0));
+      if (!sec) return 0;
+      var d = Profile.data();
+      if (!d.voiceLog) d.voiceLog = [];
+      var now = Date.now();
+      d.voiceLog.push({ at: now, sec: sec });
+      /* Keep only what the windows need. */
+      var cutoff = now - 31 * 86400000;
+      d.voiceLog = d.voiceLog.filter(function (e) { return e && e.at > cutoff; });
+      d.usage.voiceSeconds = (d.usage.voiceSeconds || 0) + sec;
+      Profile.save();
+      return sec;
     },
 
     _lessonsToday: function () {

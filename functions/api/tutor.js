@@ -55,7 +55,7 @@ const DEFAULT_MAX_OUTPUT = 220;
 const DEFAULT_DAILY_CAP = 400;
 const MAX_BODY = 4096;
 
-const INTENTS = ['lesson', 'answer', 'explain_again'];
+const INTENTS = ['lesson', 'answer', 'explain_again', 'encourage'];
 
 /* Mirrors EMOTIONS / taxonomy on the client. Anything outside is rejected
    rather than coerced, so a malformed context cannot steer the prompt. */
@@ -124,7 +124,22 @@ function cleanContext(raw) {
     question: null,
     worlds: Array.isArray(c.worldsPlayed)
       ? c.worldsPlayed.filter((w) => typeof w === 'string').slice(0, 6).map((w) => w.slice(0, 20))
-      : []
+      : [],
+    /* A short window of the current lesson. Re-bounded here rather than
+       trusted: the client caps it too, but a cap that only exists on the
+       client is not a cap. */
+    turns: Array.isArray(c.recentTurns)
+      ? c.recentTurns
+          .filter((t) => t && typeof t.text === 'string')
+          .slice(-6)
+          .map((t) => ({
+            who: t.who === 'child' ? 'child' : 'tutor',
+            text: t.text.slice(0, 160)
+          }))
+          .filter((t) => inputIsSafe(t.text))
+      : [],
+    missedPrompt: typeof c.missedPrompt === 'string' ? c.missedPrompt.slice(0, 160) : null,
+    correctAnswer: typeof c.correctAnswer === 'string' ? c.correctAnswer.slice(0, 40) : null
   };
 
   if (typeof c.question === 'string' && c.question.trim()) {
@@ -145,6 +160,9 @@ function systemPrompt(ctx) {
     '- Be brief. Three or four short sentences at most. Never write a wall of text.',
     '- Warm, encouraging, plain language. One emoji at most, and only if it helps.',
     '- Prefer: a short explanation, then one concrete example, then a question back to the child.',
+    '- You are mid-conversation. Refer back to what was just said when it helps',
+    '  ("like we did with the shells a moment ago"). Never re-introduce yourself.',
+    '- Vary your wording. Do not open every turn the same way.',
     '- Never say "that\'s easy", "you should know this", or "wrong again".',
     '- When a child is wrong, say something like "Almost! Let\'s look at it another way."',
     '',
@@ -178,12 +196,28 @@ function userPrompt(intent, ctx) {
     bits.push(`The child asked: "${ctx.question}"`);
     bits.push('Answer it at their level, briefly, then invite them to try a related example.');
   } else if (intent === 'explain_again') {
-    bits.push('They found this hard. Explain the SAME idea a different way, more concretely.');
+    bits.push('They just got this wrong twice, so your first explanation did not land.');
+    if (ctx.missedPrompt) bits.push(`The question was: "${ctx.missedPrompt}"`);
+    if (ctx.correctAnswer) bits.push(`The answer is ${ctx.correctAnswer}.`);
+    bits.push('Explain the SAME idea a COMPLETELY different way — a picture in words, ' +
+              'a physical object, counting on fingers. Do not repeat your earlier wording.');
     if (ctx.stuck) bits.push('Be extra gentle and go a step simpler.');
+  } else if (intent === 'encourage') {
+    bits.push('Say one short, warm, specific thing about how they are doing. One sentence.');
   } else {
-    bits.push('Give a very short lesson introducing this skill, then invite them to practise.');
+    bits.push('Introduce this skill in three or four short sentences, then invite them ' +
+              'to practise. Use one concrete example with real numbers or real objects.');
   }
   return bits.join('\n');
+}
+
+/* The current lesson as actual conversation turns, so the model continues a
+   conversation rather than restarting one. Bounded by cleanContext(). */
+function historyMessages(ctx) {
+  return ctx.turns.map((t) => ({
+    role: t.who === 'child' ? 'user' : 'assistant',
+    content: t.text
+  }));
 }
 
 /* ---------- coarse abuse control ----------
@@ -262,6 +296,7 @@ export async function onRequestPost(context) {
         temperature: 0.6,
         messages: [
           { role: 'system', content: systemPrompt(ctx) },
+          ...historyMessages(ctx),
           { role: 'user', content: userPrompt(intent, ctx) }
         ]
       })
