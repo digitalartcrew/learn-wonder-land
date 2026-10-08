@@ -840,7 +840,7 @@ ok('every script index.html loads is pre-cached by the service worker',
    an old cache serving the previous script list would leave the tutor broken
    rather than absent. Update both sides together on every release. */
 ok('the service worker VERSION was bumped for this release',
-  /const VERSION = 'ww-v7'/.test(swSrc));
+  /const VERSION = 'ww-v8'/.test(swSrc));
 ok('code is still network-first so HTML and JS cannot drift apart',
   /req\.mode === 'navigate' \|\| CODE\.test/.test(swSrc));
 ok('the signup endpoint is still never cached', /pathname\.includes\('\/api\/'\)/.test(swSrc));
@@ -1571,6 +1571,54 @@ ok('the synchronous no-Promise fallback works at all',
   !!offlineAnswer('what is 7 + 5'));
 ok('the old shrug is gone from the codebase',
   !/can.t look that one up/i.test(read('js/tutor/provider.js')));
+
+/* The typed question box was removed from the child's view, but the engine
+   behind it is intact and still routed — so restoring it is rendering a box,
+   not rebuilding a feature. These assertions pin that. */
+ok('the typed question box is no longer rendered to the child',
+  !/tutor-ask-input/.test(read('js/tutor/screen.js')));
+ok('but the answer engine is still wired into the provider',
+  /tutorAnswers/.test(read('js/tutor/provider.js')));
+ok('and WW.tutorSession.ask() still screens and routes',
+  typeof WW.tutorSession.ask === 'function' &&
+  /inspectInput/.test(read('js/tutor/session.js')));
+ok('the removal is explained where the next person will look',
+  /REMOVED/.test(read('js/tutor/screen.js')));
+
+/* The menu replaced one button with real choices. */
+ok('the menu offers more than one thing to do', (() => {
+  const src = read('js/tutor/screen.js');
+  return /Choose a subject/.test(src) && /Surprise me/.test(src) &&
+         /Practise something tricky/.test(src);
+})());
+ok('the suggested lesson is named rather than being a mystery box',
+  /Let..s learn . \+ \(def/.test(read('js/tutor/screen.js')) ||
+  /Let\\'s learn ' \+/.test(read('js/tutor/screen.js')));
+
+/* Voice is no longer the default on every render. */
+ok('showing a line no longer speaks it by default', (() => {
+  const src = read('js/tutor/screen.js');
+  return /function say\(text, expression, speak\)/.test(src) &&
+         /if \(speak && WW\.tutorVoice\)/.test(src);
+})());
+ok('mounting a screen no longer speaks by default', (() => {
+  const src = read('js/tutor/screen.js');
+  return /function mountStage\(container, line, expression, speak\)/.test(src);
+})());
+ok('the tutor respects the "cheering voice" switch too', (() => {
+  WW.State.load();
+  WW.State.data.settings.sound = true;
+  WW.State.data.settings.voice = false;
+  const off = WW.tutorVoice.enabled();
+  WW.State.data.settings.voice = true;
+  return off === false;
+})());
+ok('and the master mute still silences it', (() => {
+  WW.State.data.settings.sound = false;
+  const off = WW.tutorVoice.enabled();
+  WW.State.data.settings.sound = true;
+  return off === false;
+})());
 
 /* Screening still applies to a locally produced answer. */
 ok('a locally produced answer is still screened before display', (() => {

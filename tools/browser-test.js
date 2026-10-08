@@ -1192,7 +1192,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('the child is given real options, not a single button',
     await tp.locator('.tutor-option').count() >= 3);
 
-  await tp.locator('#tutor-body button:has-text("Let\'s learn it!"), #tutor-body button:has-text("Find me something")').first().click();
+  /* The menu names the skill now, e.g. "Let's learn multiplication", so match
+     the primary option rather than a fixed string. */
+  await tp.locator('.tutor-option.is-primary, .tutor-option').first().click();
   await sleep(900);
   const lessonTxt = (await tp.locator('#tutor-activity').textContent()).replace(/\s+/g, ' ');
   ok('a short lesson is delivered', lessonTxt.length > 40, lessonTxt.slice(0, 80));

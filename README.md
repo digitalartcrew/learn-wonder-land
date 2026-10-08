@@ -389,7 +389,7 @@ node tools/browser-test.js http://127.0.0.1:8111
 >   node tools/browser-test.js http://localhost:8111
 > ```
 
-**`logic-test.js` (393 checks)** verifies save/load round-trips and
+**`logic-test.js` (403 checks)** verifies save/load round-trips and
 forward-compatible merging, level curves, unlock thresholds, crystal
 restoration, 50 000 generated maths questions (answer always present, no
 duplicate options, arithmetic actually correct), story content integrity, that
@@ -402,7 +402,7 @@ that each one renders valid SVG with a screen-reader description and references
 no external files, and that the celebration audio degrades safely when there is
 no AudioContext.
 
-**`browser-test.js` (362 checks)** plays the game: creates a character, crosses
+**`browser-test.js` (364 checks)** plays the game: creates a character, crosses
 the bridge, deliberately answers wrong to confirm hints appear and nothing
 "fails" the child, reads a whole story chapter including spelling and sentence
 building, runs the plant/magnet/weather experiments, builds a city and watches
@@ -781,6 +781,19 @@ ASSESS → TEACH → PRACTISE → CHECK → ADAPT → REVIEW → ADVANCE
 Practice gives help and lets the child retry; the check does not, and only the
 check counts towards mastery. A missed answer gets *"Almost! Let's look at it
 another way."* and a different explanation — never "wrong again".
+
+### Real choices, and not too much talking
+
+"What would you like to do?" offers the named suggestion, a subject the child
+picks themselves, something they find tricky, or a surprise. The typed
+**Ask WonderTutor** box has been removed — the answering engine is still there
+and still tested, but a free-text box promised more than it could deliver
+without a model configured, and a guided menu never has that problem.
+
+Speech is reserved for where hearing it helps: the lesson, a re-explanation
+after a miss, and the verdict. Questions and answers are marked with sounds,
+not sentences. The existing **Cheering voice** setting now quietens the tutor
+too.
 
 ### It works on a plane
 

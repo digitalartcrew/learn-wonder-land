@@ -334,19 +334,33 @@ easy", no "you should know this", and no streak the child can break.
 A browser test asserts the encouraging phrasing appears **and** that the
 shaming phrasing does not.
 
-### Asking at any point
+### Choosing what to do
 
-`WW.tutorSession.ask(text)` works in every state, including mid-lesson. The
-answer shape the prompt asks for is: explanation → example → a question back.
+The tutoring screen offers real options rather than one button:
 
-```
-Child:  "Why is 8 x 4 32?"
+| Option | What it does |
+|---|---|
+| **Let's learn _&lt;skill&gt;_** | `WW.tutor.nextSkill()`, named — not a mystery box — with its reason underneath |
+| **Choose a subject** | Six domains → the skills inside, each showing where the child is up to |
+| **Practise something tricky** | `Profile.weakest()`. Only shown when there genuinely is one |
+| **Surprise me** | A random skill at their level |
 
-Tutor:  "Multiplication is repeated addition. 🌟
-         8 × 4 means four groups of 8.
-         8 + 8 + 8 + 8 = 32.
-         Want to try 6 × 4?"
-```
+An earlier version asked "What would you like to do?" and offered exactly one
+answer, which is not a choice.
+
+### The typed question box: removed
+
+`WW.tutorSession.ask()` and `WW.tutorAnswers` are **still present and still
+tested** — the answerer works out arithmetic, spells 57 words, defines 94 terms
+and explains 10 concepts, all offline. It is simply no longer rendered.
+
+A free-text box set an expectation the tutor could not meet. Without a
+configured model it answers a decent range and then has to say "I don't know
+that one" — and a child does not experience that as a careful boundary, they
+experience it as a thing that does not work. Every option on the guided menu
+leads somewhere, so it never has that failure mode.
+
+Restoring it is rendering a box again, not rebuilding a feature.
 
 ---
 
@@ -502,6 +516,27 @@ part of the face — frozen. The talking animation uses `transform: scaleY()` fo
 the same reason.
 
 Blinking is irregular on purpose; a perfectly timed blink looks like a machine.
+
+### How much it talks
+
+Speech is **opt-in per call**, not the default. `say()` and `mountStage()` both
+take a `speak` flag, and most callers do not pass it.
+
+| Moment | Spoken? |
+|---|---|
+| Meeting the tutor for the first time | ✅ |
+| The assessment invitation | ✅ once, at the start |
+| Before each assessment question | ❌ — and there is no filler line either |
+| Finishing the assessment | ❌ — a `levelup` chime and confetti |
+| The lesson explanation | ✅ |
+| A re-explanation after a second miss | ✅ — the one place hearing it again helps |
+| After each practice answer | ❌ — the `good`/`oops` chime already said it |
+| The verdict at the end | ✅ |
+
+An earlier version spoke on every screen mount, before every question and
+after every answer. That slowed the child down and became noise. It also now
+respects the existing **Cheering voice** switch, so a parent can quieten the
+tutor without muting the game's sounds.
 
 ### Reduced motion
 
