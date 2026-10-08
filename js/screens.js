@@ -898,9 +898,36 @@
       }
 
       var lang = WW.tutorLanguages ? WW.tutorLanguages.get(P2.language()) : null;
+      /* Changeable, not just reported. Until now the grade could only be set
+         on the very first run and there was no route back to it — so a parent
+         who picked wrong, or whose child moved up a year, was stuck with
+         content pitched at the wrong level and no way to say so. */
       card.appendChild(U.el('p', { class: 'report-line' }, [
         U.el('b', { text: 'Grade setting: ' }), T2.gradeLabel(grade)
       ]));
+
+      var gradeRow = U.el('div', { class: 'tutor-grades', role: 'group',
+                                   'aria-label': 'Change the grade WonderTutor teaches at' });
+      T2.GRADES.forEach(function (g) {
+        gradeRow.appendChild(U.el('button', {
+          class: 'chip tutor-grade' + (grade === g.value ? ' is-on' : ''),
+          text: g.short,
+          'aria-label': 'Teach at ' + g.label,
+          'aria-pressed': grade === g.value ? 'true' : 'false',
+          onclick: function () {
+            if (g.value === grade) return;
+            Sound.play('tap');
+            P2.setGrade(g.value);
+            FX.toast('WonderTutor will teach at ' + g.label + '.');
+            WW.Screens.parent.enter();
+          }
+        }));
+      });
+      card.appendChild(gradeRow);
+      card.appendChild(U.el('p', { class: 'muted small', text:
+        'Tap a grade to change it. If the questions feel too hard or too easy, ' +
+        'move it — WonderTutor adjusts each skill from there, and nothing your ' +
+        'child has already learned is lost.' }));
       if (lang) {
         card.appendChild(U.el('p', { class: 'report-line' }, [
           U.el('b', { text: 'Tutoring language: ' }),

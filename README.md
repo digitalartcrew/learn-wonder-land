@@ -389,7 +389,7 @@ node tools/browser-test.js http://127.0.0.1:8111
 >   node tools/browser-test.js http://localhost:8111
 > ```
 
-**`logic-test.js` (350 checks)** verifies save/load round-trips and
+**`logic-test.js` (393 checks)** verifies save/load round-trips and
 forward-compatible merging, level curves, unlock thresholds, crystal
 restoration, 50 000 generated maths questions (answer always present, no
 duplicate options, arithmetic actually correct), story content integrity, that
@@ -402,7 +402,7 @@ that each one renders valid SVG with a screen-reader description and references
 no external files, and that the celebration audio degrades safely when there is
 no AudioContext.
 
-**`browser-test.js` (341 checks)** plays the game: creates a character, crosses
+**`browser-test.js` (362 checks)** plays the game: creates a character, crosses
 the bridge, deliberately answers wrong to confirm hints appear and nothing
 "fails" the child, reads a whole story chapter including spelling and sentence
 building, runs the plant/magnet/weather experiments, builds a city and watches
@@ -766,6 +766,11 @@ WW.learningProfile.band('spelling');         // 'approaching'
 Those four words — `below` / `approaching` / `on` / `above` grade level —
 describe a **skill**. Nothing here diagnoses, rates or labels a child. See
 [docs/WONDERTUTOR.md §2](docs/WONDERTUTOR.md#2-what-this-is-not).
+
+**The grade is changeable at any time** — grown-ups dashboard, or the tutor
+screen behind the gate. Changing it keeps everything the child has already
+earned and only moves where the tutor pitches from. If questions feel too hard
+or too easy, that is the dial.
 
 ### The loop
 

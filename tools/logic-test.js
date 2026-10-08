@@ -840,7 +840,7 @@ ok('every script index.html loads is pre-cached by the service worker',
    an old cache serving the previous script list would leave the tutor broken
    rather than absent. Update both sides together on every release. */
 ok('the service worker VERSION was bumped for this release',
-  /const VERSION = 'ww-v6'/.test(swSrc));
+  /const VERSION = 'ww-v7'/.test(swSrc));
 ok('code is still network-first so HTML and JS cannot drift apart',
   /req\.mode === 'navigate' \|\| CODE\.test/.test(swSrc));
 ok('the signup endpoint is still never cached', /pathname\.includes\('\/api\/'\)/.test(swSrc));
@@ -1332,6 +1332,118 @@ ok('ending a lesson forgets the exchange', (() => {
 })());
 
 /* ---- real-time voice: the gates, not the happy path ---- */
+section('27a. WonderTutor: grade is changeable, and pitched right');
+
+/* The bug: grade could only ever be set on first run. */
+ok('the grade can be changed after it has been set', (() => {
+  freshTutor(2);
+  TP.setGrade(1);
+  return TP.grade() === 1;
+})());
+ok('changing grade does NOT wipe what the child has shown us', (() => {
+  freshTutor(3);
+  for (let i = 0; i < 8; i++) TP.recordAnswer('addition', true);
+  const before = TP.skill('addition').mastery;
+  TP.setGrade(1);
+  return TP.skill('addition').mastery === before && TP.grade() === 1;
+})());
+ok('and does not re-trigger the whole first-run flow', (() => {
+  freshTutor(2);
+  TP.data().assessment.state = 'complete';
+  TP.setGrade(4);
+  return WW.tutor.setupNeeded().grade === false &&
+         WW.tutor.setupNeeded().assessment === false;
+})());
+ok('the grown-ups dashboard offers grade buttons, not just a label',
+  /Tap a grade to change it/.test(read('js/screens.js')));
+ok('and the tutor screen has a route back to settings',
+  /change grade or language/i.test(read('js/tutor/screen.js')));
+ok('that route is behind the parental gate', (() => {
+  const src = read('js/tutor/screen.js');
+  return /_settingsLink[\s\S]{0,500}?parentGate\.require/.test(src);
+})());
+
+/* Calibration: nothing in the first questions should be beyond the grade. */
+function firstQuestions(grade) {
+  TP.reset(); TP.setGrade(grade); TC.seed(42);
+  return WW.tutorAssessment.plan(grade).map((id) => ({
+    id, q: TC.question(id, TT.defaultLevel(id, grade))
+  })).filter((x) => x.q);
+}
+
+ok('Kindergarten is never asked to spell', (() => {
+  const s = TT.skill('spelling');
+  return s.grades[0] >= 1;
+})());
+ok('Kindergarten addition stays within single digits', (() => {
+  TC.seed(11);
+  for (let i = 0; i < 40; i++) {
+    const q = TC.question('addition', 0);
+    const nums = q.prompt.match(/\d+/g).map(Number);
+    if (nums.some((n) => n > 5)) return false;
+  }
+  return true;
+})());
+ok('Kindergarten shapes are triangles and squares, not octagons', (() => {
+  TC.seed(5);
+  for (let i = 0; i < 30; i++) {
+    const q = TC.question('geometry', 0);
+    if (/pentagon|hexagon|octagon/.test(q.prompt)) return false;
+  }
+  return true;
+})());
+ok('Grade 2 multiplication stays inside the small tables', (() => {
+  TC.seed(9);
+  for (let i = 0; i < 40; i++) {
+    const q = TC.question('multiplication', 2);
+    const nums = q.prompt.match(/\d+/g).map(Number);
+    if (nums.some((n) => n > 5)) return false;
+  }
+  return true;
+})());
+ok('Grade 2 addition does not open with three-digit sums', (() => {
+  TC.seed(3);
+  for (let i = 0; i < 40; i++) {
+    const q = TC.question('addition', 2);
+    if (Number(q.answer) > 40) return false;
+  }
+  return true;
+})());
+ok('place-value questions never have the answer zero', (() => {
+  TC.seed(77);
+  for (let lvl = 1; lvl <= 4; lvl++) {
+    for (let i = 0; i < 30; i++) {
+      const q = TC.question('number-sense', lvl);
+      if (Number(q.answer) === 0) return false;
+    }
+  }
+  return true;
+})());
+ok('"elephant" is no longer a Kindergarten spelling word', (() => {
+  TC.seed(1);
+  for (let i = 0; i < 30; i++) {
+    const q = TC.question('spelling', 1);
+    if (/trunk|elephant/i.test(q.prompt)) return false;
+  }
+  return true;
+})());
+ok('taxes are not explained to a Grade 2 child', (() => {
+  TC.seed(2);
+  for (let i = 0; i < 30; i++) {
+    const q = TC.question('community', 2);
+    if (/tax/i.test(q.prompt)) return false;
+  }
+  return true;
+})());
+ok('every skill offered at Kindergarten has K-appropriate content',
+  firstQuestions(0).every((x) => {
+    const nums = (x.q.prompt.match(/\d+/g) || []).map(Number);
+    return nums.every((n) => n <= 20);
+  }),
+  firstQuestions(0).map((x) => x.id + ': ' + x.q.prompt).join(' | ').slice(0, 200));
+ok('the diagnostic still has enough breadth at Kindergarten',
+  WW.tutorAssessment.plan(0).length >= 4, String(WW.tutorAssessment.plan(0).length));
+
 section('28a. WonderTutor: Ask WonderTutor actually answers');
 const AN = WW.tutorAnswers;
 freshTutor(3);

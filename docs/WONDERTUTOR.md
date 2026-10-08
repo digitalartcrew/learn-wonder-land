@@ -167,6 +167,25 @@ WW.learningProfile.band('multiplication');   // 'above'
 WW.learningProfile.band('spelling');         // 'approaching'
 ```
 
+### Pitching it right
+
+A skill's grade range starts at the grade a child is normally **taught** it,
+not the grade they first hear the word. The first draft was a year or two
+optimistic at the bottom end, which made the early grades feel punishing — a
+five-year-old was asked to spell *elephant* and to say how many tens are in 17.
+
+When in doubt, **start later**. A child who is ahead is moved up by the
+diagnostic within a couple of questions; a child who is behind just feels bad.
+There are tests pinning the bottom end: Kindergarten addition stays within
+single digits, K shapes are triangles and squares, Grade 2 multiplication stays
+inside the small tables, and no place-value question ever has the answer zero.
+
+**The grade is changeable at any time** — from the grown-ups dashboard, or from
+the tutor screen behind the gate. Changing it keeps every skill level the child
+has already earned; it only changes where the tutor pitches from. An earlier
+version could only set the grade on the very first run, with no route back,
+which left a parent who picked wrong with no way to say so.
+
 ### The taxonomy
 
 Six domains, 39 skills, each with a grade range and prerequisites:

@@ -66,11 +66,19 @@
 
   /* grades: [firstGrade, lastGrade] where the skill is normally taught.
      prereq: skills that should be reasonably solid first. The lesson picker
-     uses these to refuse to run ahead of a foundational gap. */
+     uses these to refuse to run ahead of a foundational gap.
+
+     CALIBRATION NOTE. These were first drafted a year or two optimistic at the
+     bottom end, which made Kindergarten and Grade 1 feel punishing: a
+     five-year-old was being asked to spell "elephant" and to say how many tens
+     are in 17. The rule applied since: a skill starts at the grade a child is
+     normally TAUGHT it, not the grade they first hear the word. When in doubt,
+     start later — a child who is ahead gets moved up by the diagnostic within
+     a couple of questions, whereas a child who is behind just feels bad. */
   var SKILLS = [
     /* ---- Mathematics ---- */
     { id: 'counting',        domain: 'math', name: 'Counting',            grades: [0, 1], prereq: [] },
-    { id: 'number-sense',    domain: 'math', name: 'Number sense',        grades: [0, 2], prereq: ['counting'] },
+    { id: 'number-sense',    domain: 'math', name: 'Number sense',        grades: [1, 3], prereq: ['counting'] },
     { id: 'comparison',      domain: 'math', name: 'Comparing numbers',   grades: [0, 2], prereq: ['counting'] },
     { id: 'addition',        domain: 'math', name: 'Addition',            grades: [0, 3], prereq: ['counting'] },
     { id: 'subtraction',     domain: 'math', name: 'Subtraction',         grades: [0, 3], prereq: ['counting'] },
@@ -90,7 +98,7 @@
     { id: 'inference',       domain: 'reading', name: 'Inference',        grades: [3, 6], prereq: ['main-idea'] },
 
     /* ---- Writing ---- */
-    { id: 'spelling',        domain: 'writing', name: 'Spelling',         grades: [0, 6], prereq: ['phonics'] },
+    { id: 'spelling',        domain: 'writing', name: 'Spelling',         grades: [1, 6], prereq: ['phonics'] },
     { id: 'sentences',       domain: 'writing', name: 'Building sentences', grades: [1, 5], prereq: ['spelling'] },
     { id: 'grammar',         domain: 'writing', name: 'Grammar',          grades: [1, 6], prereq: ['sentences'] },
 
@@ -108,7 +116,7 @@
     { id: 'environment',     domain: 'social', name: 'Caring for the planet', grades: [2, 6], prereq: [] },
 
     /* ---- Financial literacy (aligned with Business Town) ---- */
-    { id: 'coins-notes',     domain: 'finance', name: 'Coins and notes',  grades: [0, 3], prereq: ['counting'] },
+    { id: 'coins-notes',     domain: 'finance', name: 'Coins and notes',  grades: [1, 4], prereq: ['counting'] },
     { id: 'saving',          domain: 'finance', name: 'Saving',           grades: [1, 5], prereq: ['coins-notes'] },
     { id: 'spending-choices', domain: 'finance', name: 'Spending choices', grades: [1, 5], prereq: ['coins-notes'] },
     { id: 'profit',          domain: 'finance', name: 'Revenue, cost and profit', grades: [3, 6], prereq: ['subtraction', 'saving'] }

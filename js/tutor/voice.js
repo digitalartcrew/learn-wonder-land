@@ -46,13 +46,17 @@
 
     available: function () { return !!synth(); },
 
-    /* The master sound switch applies; the separate "cheering voice" toggle
-       does not, because this is how the tutor talks rather than praise. */
+    /* Both switches apply. The master sound switch is obvious; the "Cheering
+       voice" toggle now covers the tutor too, because a parent who wants a
+       quieter tutor should not have to mute every chime to get it. Lessons
+       remain fully readable on screen either way. */
     enabled: function () {
       if (!Voice.available()) return false;
       try {
-        if (WW.State && WW.State.data && WW.State.data.settings &&
-            WW.State.data.settings.sound === false) return false;
+        var st = WW.State && WW.State.data && WW.State.data.settings;
+        if (!st) return true;
+        if (st.sound === false) return false;
+        if (st.voice === false) return false;
       } catch (e) { /* no state yet */ }
       return true;
     },

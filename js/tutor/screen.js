@@ -46,13 +46,18 @@
 
   /* The tutor's current line, spoken and shown. One place, so the mouth and
      the bubble can never disagree. */
-  function say(text, expression) {
+  /* Show a line, and set the face. Speaking is NOT the default.
+
+     The tutor used to speak on every screen, before every question and after
+     every answer, which is far too much — it slowed the child down and turned
+     into noise. Speech is now reserved for the places where hearing the words
+     genuinely helps: the lesson explanation, a re-explanation after a miss,
+     and the verdict at the end. Everything else is a sound effect. */
+  function say(text, expression, speak) {
     var bubble = document.getElementById('tutor-bubble');
     if (bubble) bubble.textContent = text;
     if (expression && WW.tutorAvatar) WW.tutorAvatar.react(expression);
-    if (WW.tutorVoice) {
-      WW.tutorVoice.speak(text, Profile.language());
-    }
+    if (speak && WW.tutorVoice) WW.tutorVoice.speak(text, Profile.language());
   }
 
   /* The stage: avatar + speech bubble. Rebuilt per screen state, so the
@@ -67,13 +72,15 @@
     return wrap;
   }
 
-  function mountStage(container, line, expression) {
+  /* `speak` is opt-in per call. Previously every mount spoke, which is why
+     the tutor talked before every single assessment question. */
+  function mountStage(container, line, expression, speak) {
     container.appendChild(stage(line));
     if (WW.tutorAvatar) {
       WW.tutorAvatar.mount(document.getElementById('tutor-art'));
       WW.tutorAvatar.setState(expression || 'idle');
     }
-    if (line && WW.tutorVoice) WW.tutorVoice.speak(line, Profile.language());
+    if (speak && line && WW.tutorVoice) WW.tutorVoice.speak(line, Profile.language());
   }
 
   var Screen = WW.Screens.tutor = {
@@ -118,7 +125,7 @@
     meet: function (b) {
       var line = 'Hello! I\'m WonderTutor, your learning guide. ' +
                  'Before we start, I need a grown-up for one quick question.';
-      mountStage(b, line, 'happy');
+      mountStage(b, line, 'happy', true);
 
       b.appendChild(UI.card('tutor-card', [
         U.el('h3', { text: 'Meet WonderTutor' }),
@@ -232,17 +239,35 @@
       note.textContent = Langs.disclosure(chosenLang) || '';
       card.appendChild(note);
 
-      card.appendChild(UI.bigButton('Save and continue', function () {
+      var firstRun = !Profile.hasGrade();
+
+      card.appendChild(UI.bigButton(firstRun ? 'Save and continue' : 'Save', function () {
         if (chosenGrade === null) {
           gradeLabel.textContent = 'Please choose a grade first.';
           gradeLabel.className = 'muted small bad';
           return;
         }
+        var changed = chosenGrade !== Profile.grade();
         Profile.setGrade(chosenGrade);
         Profile.setLanguage(chosenLang);
         Sound.play('unlock');
-        Screen.assessIntro(body());
+        /* Only a brand-new Explorer goes straight into the diagnostic. Changing
+           the grade later must not wipe what the child has already shown us —
+           their skill levels stay, and the tutor pitches from the new grade. */
+        if (firstRun) { Screen.assessIntro(body()); return; }
+        if (changed) WW.FX.toast('WonderTutor will teach at ' + T.gradeLabel(chosenGrade) + '.');
+        Screen.enter();
       }, 'primary wide'));
+
+      if (!firstRun) {
+        card.appendChild(U.el('p', { class: 'muted small', text:
+          'If the questions have felt too hard or too easy, move the grade. ' +
+          'Nothing your child has already learned is lost.' }));
+        card.appendChild(U.el('button', {
+          class: 'ghost-btn', text: '← Back without changing',
+          onclick: function () { Sound.play('tap'); Screen.enter(); }
+        }));
+      }
 
       b.appendChild(card);
     },
@@ -253,7 +278,7 @@
       b.innerHTML = '';
       var line = 'Let\'s see what you already know! There are no wrong answers — ' +
                  'this just helps me teach you the right things.';
-      mountStage(b, line, 'curious');
+      mountStage(b, line, 'curious', true);
 
       b.appendChild(UI.card('tutor-card', [
         U.el('h3', { text: 'Let\'s see what you already know!' }),
@@ -275,7 +300,10 @@
       if (!q) { Screen.assessDone(b); return; }
 
       b.innerHTML = '';
-      mountStage(b, 'Here\'s one for you.', 'curious');
+      /* No spoken preamble and no filler line. Twenty questions each prefaced
+         by "Here's one for you" is exactly the noise this screen does not
+         need — the question itself is the content. */
+      mountStage(b, '', 'curious');
 
       var card = UI.card('tutor-card');
       card.appendChild(U.el('p', { class: 'tutor-progress muted small',
@@ -296,8 +324,11 @@
       Assess.finish();
       b.innerHTML = '';
 
+      /* A sound, not a sentence. Finishing is a moment to feel, and the
+         learning path is on screen to read. */
       var line = 'All done — thank you! I\'ve built you a learning path.';
       mountStage(b, line, 'celebrating');
+      Sound.play('levelup');
       if (WW.FX) WW.FX.confetti();
 
       var card = UI.card('tutor-card', [
@@ -336,20 +367,179 @@
       var activity = U.el('div', { class: 'tutor-activity', id: 'tutor-activity' });
       b.appendChild(activity);
 
-      var card = UI.card('tutor-card', [
-        U.el('p', { class: 'muted', text: 'What would you like to do?' })
-      ]);
-      card.appendChild(UI.bigButton(
-        choice ? 'Let\'s learn it!' : 'Find me something',
-        function () {
-          Sound.play('tap');
-          if (!choice) { Screen.resting(activity); return; }
-          Screen.runLesson(choice);
-        }, 'primary wide'));
-      b.appendChild(card);
-
-      b.appendChild(Screen._askBox());
+      b.appendChild(Screen._menu(choice, activity));
+      b.appendChild(Screen._talkCard());
       Screen._demoNoteIfNeeded(b);
+      b.appendChild(Screen._settingsLink());
+    },
+
+    /* ---------- the menu ----------
+       "What would you like to do?" used to be a question with exactly one
+       answer, which is not a choice. A child gets real options: the thing the
+       tutor suggests, a subject of their own choosing, something they find
+       tricky, or a surprise. */
+    _menu: function (choice, activity) {
+      var card = UI.card('tutor-card', [
+        U.el('h3', { text: 'What would you like to do?' })
+      ]);
+      var list = U.el('div', { class: 'tutor-menu' });
+
+      function option(emoji, label, sub, cls, onPick) {
+        list.appendChild(U.el('button', {
+          class: 'tutor-option' + (cls ? ' ' + cls : ''),
+          onclick: function () { Sound.play('tap'); onPick(); }
+        }, [
+          U.el('span', { class: 'tutor-option-emoji', text: emoji, 'aria-hidden': 'true' }),
+          U.el('span', { class: 'tutor-option-text' }, [
+            U.el('b', { text: label }),
+            sub ? U.el('small', { text: sub }) : null
+          ].filter(Boolean))
+        ]));
+      }
+
+      /* 1. What the tutor would pick, named so it is a real choice and not
+            a mystery box. */
+      if (choice) {
+        var def = T.skill(choice.skillId);
+        option('✨', 'Let\'s learn ' + (def ? def.name.toLowerCase() : 'something'),
+          Screen._reasonLabel(choice.reason), 'is-primary',
+          function () { Screen.runLesson(choice); });
+      }
+
+      /* 2. Their own pick. */
+      option('📚', 'Choose a subject', 'Maths, reading, science and more', null,
+        function () { Screen.subjectPicker(activity); });
+
+      /* 3. The honest one: work on a weak spot. Only offered when there
+            actually is one, so it is never a fake option. */
+      var weak = Profile.weakest(1)[0];
+      if (weak && WW.tutorContent.has(weak.skillId)) {
+        var wd = T.skill(weak.skillId);
+        option('💪', 'Practise something tricky',
+          wd ? wd.name : null, null,
+          function () {
+            Screen.runLesson({ skillId: weak.skillId, level: weak.level, reason: 'practice' });
+          });
+      }
+
+      /* 4. Something genuinely different. */
+      option('🎲', 'Surprise me', 'Anything at my level', null,
+        function () {
+          var all = T.skillsForGrade(Profile.grade() || 0)
+            .filter(function (x) { return WW.tutorContent.has(x.id); });
+          if (!all.length) { Screen.resting(activity); return; }
+          var pick = all[Math.floor(Math.random() * all.length)];
+          Screen.runLesson({ skillId: pick.id,
+            level: Profile.level(pick.id), reason: 'new' });
+        });
+
+      card.appendChild(list);
+      return card;
+    },
+
+    _reasonLabel: function (reason) {
+      switch (reason) {
+        case 'review':  return 'A quick refresh — it makes it stick';
+        case 'prereq':  return 'This makes the next bit much easier';
+        case 'practice':return 'I think this one needs a little work';
+        case 'advance': return 'You\'re ready for something trickier';
+        default:        return 'Something new';
+      }
+    },
+
+    /* Pick a subject, then a skill inside it. Two taps, no reading required
+       beyond the subject names the child already sees on the map. */
+    subjectPicker: function (activity) {
+      if (!activity) return;
+      activity.innerHTML = '';
+      var grade = Profile.grade() || 0;
+
+      var card = UI.card('tutor-card', [
+        U.el('h3', { text: 'What shall we learn?' })
+      ]);
+      var list = U.el('div', { class: 'tutor-menu' });
+
+      T.DOMAINS.forEach(function (d) {
+        var skills = T.skillsForGrade(grade).filter(function (x) {
+          return x.domain === d.id && WW.tutorContent.has(x.id);
+        });
+        if (!skills.length) return;
+        list.appendChild(U.el('button', {
+          class: 'tutor-option',
+          'aria-label': d.name + ', ' + skills.length + ' topics',
+          onclick: function () {
+            Sound.play('tap');
+            Screen.skillPicker(activity, d, skills);
+          }
+        }, [
+          U.el('span', { class: 'tutor-option-emoji', text: d.emoji, 'aria-hidden': 'true' }),
+          U.el('span', { class: 'tutor-option-text' }, [
+            U.el('b', { text: d.name }),
+            U.el('small', { text: skills.length + ' thing' + (skills.length === 1 ? '' : 's') + ' to try' })
+          ])
+        ]));
+      });
+
+      card.appendChild(list);
+      card.appendChild(U.el('button', {
+        class: 'ghost-btn', text: '← Back',
+        onclick: function () { Sound.play('tap'); activity.innerHTML = ''; }
+      }));
+      activity.appendChild(card);
+    },
+
+    skillPicker: function (activity, domain, skills) {
+      activity.innerHTML = '';
+      var card = UI.card('tutor-card', [
+        U.el('h3', { text: domain.emoji + ' ' + domain.name })
+      ]);
+      var list = U.el('div', { class: 'tutor-menu' });
+
+      skills.forEach(function (sk) {
+        var rec = Profile.data().skills[sk.id];
+        var sub = !rec || !rec.attempted ? 'Not tried yet'
+          : (Profile.isMastered(sk.id) ? 'You\'ve got this one ⭐'
+                                       : 'Keep going');
+        list.appendChild(U.el('button', {
+          class: 'tutor-option',
+          onclick: function () {
+            Sound.play('tap');
+            Screen.runLesson({ skillId: sk.id, level: Profile.level(sk.id), reason: 'new' });
+          }
+        }, [
+          U.el('span', { class: 'tutor-option-text' }, [
+            U.el('b', { text: sk.name }),
+            U.el('small', { text: sub })
+          ])
+        ]));
+      });
+
+      card.appendChild(list);
+      card.appendChild(U.el('button', {
+        class: 'ghost-btn', text: '← All subjects',
+        onclick: function () { Sound.play('tap'); Screen.subjectPicker(activity); }
+      }));
+      activity.appendChild(card);
+    },
+
+    /* A way back to the grade and language settings at any time, behind the
+       gate. Without this the only route was the first-run flow, which never
+       reappears once a grade is set. */
+    _settingsLink: function () {
+      return U.el('button', {
+        class: 'ghost-btn tutor-settings-link',
+        text: '⚙️ Grown-ups: change grade or language',
+        onclick: function () {
+          Sound.play('tap');
+          WW.parentGate.require({
+            kind: 'multiply',
+            scope: 'tutor-setup',
+            title: 'Is a grown-up here?',
+            blurb: 'Change the grade or language WonderTutor teaches at.',
+            onPass: function () { Screen.setup(body()); }
+          });
+        }
+      });
     },
 
     /* The free-demo reminder is for the GROWN-UP, phrased so a child reading
@@ -375,7 +565,7 @@
       Session.start(choice).then(function (step) {
         if (!step) { Screen.resting(act); return; }
         act.innerHTML = '';
-        say(step.text, step.expression);
+        say(step.text, step.expression, true);
 
         var card = UI.card('tutor-card', [
           U.el('h3', { text: step.title }),
@@ -396,7 +586,7 @@
 
       if (step.step === 'verdict') { Screen._verdict(step); return; }
 
-      if (step.lead) say(step.lead, step.expression);
+      if (step.lead) say(step.lead, step.expression);   /* shown, not spoken */
 
       var card = UI.card('tutor-card');
       card.appendChild(U.el('p', { class: 'tutor-progress muted small',
@@ -408,7 +598,7 @@
           if (!res) return;
           if (res.step === 'retry') {
             /* Same question again — do not clear what they typed away
-               without telling them why. */
+               without telling them why. A sound is enough here. */
             say(res.text, res.expression);
             Screen._flash(card, res.text, false);
             return;
@@ -425,7 +615,7 @@
       var act = document.getElementById('tutor-activity');
       if (!act) return;
       act.innerHTML = '';
-      say(step.text, step.expression);
+      say(step.text, step.expression, true);
       if (step.mastered && WW.FX) WW.FX.confetti();
 
       var kids = [
@@ -495,7 +685,13 @@
       var expression = (res && res.expression) ||
         (correct ? 'happy' : 'encouraging');
       var line = (res && res.text) || (correct ? 'Nice one!' : 'Almost! Let\'s look at it another way.');
-      say(line, expression);
+      /* The chime above already said "right" or "not yet". The only thing
+         worth speaking here is a fresh explanation after a second miss. */
+      var worthSaying = !correct && !!(res && res.steppedDown);
+      say(line, expression, worthSaying);
+      if (worthSaying && res.explain && WW.tutorVoice) {
+        WW.tutorVoice.speak(res.explain, Profile.language());
+      }
 
       act.innerHTML = '';
       var kids = [U.el('p', { class: correct ? 'tutor-feedback good' : 'tutor-feedback', text: line })];
@@ -522,39 +718,33 @@
       p.textContent = text;
     },
 
-    /* ---------- ask the tutor ---------- */
-    _askBox: function () {
-      var card = UI.card('tutor-ask');
-      var input = U.el('input', {
-        type: 'text', autocomplete: 'off', class: 'name-input tutor-ask-input',
-        'aria-label': 'Ask WonderTutor a question',
-        placeholder: 'Ask WonderTutor something…', maxlength: '160'
-      });
-      var send = function () {
-        var text = input.value;
-        if (!text.trim()) return;
-        input.value = '';
-        if (WW.tutorAvatar) WW.tutorAvatar.setState('thinking');
-        Session.ask(text).then(function (res) {
-          say(res.text, res.expression);
-          var act = document.getElementById('tutor-activity');
-          if (!act) return;
-          act.innerHTML = '';
-          act.appendChild(UI.card('tutor-card', [
-            U.el('p', { class: 'tutor-question', text: 'You asked: ' + text }),
-            U.el('p', { class: 'tutor-answer', text: res.text })
-          ]));
-        });
-      };
-      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
+    /* ---------- the typed question box: REMOVED ----------
+       "Ask WonderTutor" is no longer offered to the child.
 
-      card.appendChild(U.el('h4', { class: 'tutor-sub', text: 'Ask WonderTutor' }));
-      card.appendChild(input);
-      card.appendChild(UI.bigButton('Send', function () { Sound.play('tap'); send(); }, 'secondary wide'));
+       The engine behind it still exists and is still tested —
+       `WW.tutorAnswers.answer()` works out arithmetic, spells words it knows,
+       and defines ~94 terms, and `WW.tutorSession.ask()` still routes through
+       the provider and the safety screening. Nothing was deleted, so bringing
+       it back is a matter of rendering a box again.
 
-      /* Talking out loud, if and only if a grown-up has turned it on. */
+       It is not rendered because a free-text box set an expectation the tutor
+       could not meet: without a configured model it answers a decent range of
+       questions and then has to say "I don't know that one", and a child does
+       not experience that as a careful boundary — they experience it as a
+       thing that does not work. The guided menu above never has that problem,
+       because every option on it leads somewhere.
+       ---------------------------------------------------------- */
+
+    /* ---------- talking out loud ----------
+       Previously nested inside the question box; it now stands on its own so
+       removing the box did not remove voice with it. */
+    _talkCard: function () {
       var talk = Screen._talkControl();
-      if (talk) card.appendChild(talk);
+      if (!talk) return U.el('div');
+      var card = UI.card('tutor-talk-card', [
+        U.el('h4', { class: 'tutor-sub', text: '🎤 Talk with me' })
+      ]);
+      card.appendChild(talk);
       return card;
     },
 
@@ -566,7 +756,7 @@
       var VC = WW.tutorVoiceChat;
       if (!VC || !VC.isSupported()) return null;
 
-      var wrap = U.el('div', { class: 'tutor-talk' });
+      var wrap = U.el('div', { class: 'tutor-talk is-carded' });
 
       var gate = VC.available();
 

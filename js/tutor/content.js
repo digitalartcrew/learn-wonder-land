@@ -106,14 +106,19 @@
     },
 
     'number-sense': function (level) {
-      var max = span(level, [20, 100, 1000]);
-      var n = rnd(10, max);
-      if (level >= 2) {
-        var hundreds = Math.floor(n / 100);
+      /* Hundreds only from level 3, and only for a number that actually HAS
+         some. "How many hundreds are in 32?" has the answer zero, which
+         teaches nothing and reads like a trick. */
+      if (level >= 3) {
+        var big = rnd(1, 9) * 100 + rnd(0, 99);
+        var hundreds = Math.floor(big / 100);
         return numberQ('number-sense', level,
-          'How many hundreds are in ' + n + '?', hundreds,
-          n + ' has ' + hundreds + ' hundred' + (hundreds === 1 ? '' : 's') + '.');
+          'How many hundreds are in ' + big + '?', hundreds,
+          big + ' has ' + hundreds + ' hundred' + (hundreds === 1 ? '' : 's') +
+          ' and ' + (big % 100) + ' more.');
       }
+      var max = span(level, [20, 50, 99, 999]);
+      var n = rnd(10, max);
       var tens = Math.floor(n / 10);
       return numberQ('number-sense', level,
         'How many tens are in ' + n + '?', tens,
@@ -121,7 +126,7 @@
     },
 
     comparison: function (level) {
-      var max = span(level, [10, 100, 1000]);
+      var max = span(level, [5, 10, 100, 1000]);
       var a = rnd(1, max), b = rnd(1, max);
       while (b === a) b = rnd(1, max);
       return choiceQ('comparison', level,
@@ -131,7 +136,9 @@
     },
 
     addition: function (level) {
-      var max = span(level, [10, 20, 100, 1000]);
+      /* Was [10, 20, 100, 1000], which put sums over 100 — with regrouping —
+         in front of a Grade 2 child on their first question. */
+      var max = span(level, [5, 10, 20, 50, 100, 1000]);
       var a = rnd(1, max), b = rnd(1, max);
       return numberQ('addition', level,
         'What is ' + a + ' + ' + b + '?', a + b,
@@ -139,7 +146,7 @@
     },
 
     subtraction: function (level) {
-      var max = span(level, [10, 20, 100, 1000]);
+      var max = span(level, [5, 10, 20, 50, 100, 1000]);
       var a = rnd(2, max), b = rnd(1, a);
       return numberQ('subtraction', level,
         'What is ' + a + ' − ' + b + '?', a - b,
@@ -147,7 +154,9 @@
     },
 
     multiplication: function (level) {
-      var max = span(level, [5, 5, 10, 12, 12]);
+      /* Grade 2 (level 2) is the first year this is taught, so it stays inside
+         the small tables. Was [5, 5, 10, 12, 12], which opened with 10 x 10. */
+      var max = span(level, [5, 5, 5, 10, 12, 12]);
       var a = rnd(2, max), b = rnd(2, max);
       return numberQ('multiplication', level,
         'What is ' + a + ' × ' + b + '?', a * b,
@@ -155,7 +164,8 @@
     },
 
     division: function (level) {
-      var max = span(level, [5, 5, 10, 12, 12, 12]);
+      /* Grade 3 (level 3) is the first year taught — keep it to small numbers. */
+      var max = span(level, [5, 5, 5, 5, 10, 12, 12]);
       var b = rnd(2, max), q = rnd(2, max);
       var a = b * q;
       return numberQ('division', level,
@@ -211,9 +221,13 @@
     },
 
     geometry: function (level) {
-      var shapes = level <= 1
-        ? [['triangle', 3], ['square', 4], ['rectangle', 4], ['pentagon', 5]]
-        : [['pentagon', 5], ['hexagon', 6], ['octagon', 8], ['triangle', 3]];
+      /* A Kindergartener knows triangles and squares. Pentagons and octagons
+         are not reception vocabulary. */
+      var shapes = level === 0
+        ? [['triangle', 3], ['square', 4]]
+        : (level <= 2
+            ? [['triangle', 3], ['square', 4], ['rectangle', 4], ['pentagon', 5]]
+            : [['pentagon', 5], ['hexagon', 6], ['octagon', 8], ['triangle', 3]]);
       var s = pick(shapes);
       return numberQ('geometry', level,
         'How many sides does a ' + s[0] + ' have?', s[1],
@@ -223,7 +237,7 @@
     'word-problems': function (level) {
       var names = ['Mia', 'Leo', 'Ada', 'Sam', 'Kai', 'Nia'];
       var who = pick(names);
-      var max = span(level, [10, 20, 50, 100, 100, 200]);
+      var max = span(level, [6, 10, 20, 50, 100, 200]);
       var a = rnd(2, max), b = rnd(2, Math.max(2, Math.floor(a / 2)));
       if (level >= 3) {
         var groups = rnd(2, 6);
@@ -248,7 +262,7 @@
   var FINANCE = {
     'coins-notes': function (level) {
       var coins = [['a nickel', 5], ['a dime', 10], ['a quarter', 25], ['a penny', 1]];
-      if (level >= 2) {
+      if (level >= 3) {
         var q = rnd(1, 3), d = rnd(1, 4);
         return numberQ('coins-notes', level,
           'How many cents are ' + q + ' quarter' + (q === 1 ? '' : 's') +
@@ -348,13 +362,25 @@
       ]
     },
 
+    /* Three-letter words first. "Elephant" used to sit at the bottom rung,
+       which meant a five-year-old's very first spelling question was an
+       eight-letter word with a silent-ish "ph". It is now level 3. */
     spelling: {
-      0: [{ q: 'Spell the word you hear: a large grey animal with a trunk.', a: 'elephant',
-            e: 'e-l-e-p-h-a-n-t. The "ph" makes an /f/ sound.' },
-          { q: 'Spell: the opposite of night.', a: 'day', e: 'd-a-y.' }],
+      1: [{ q: 'Spell: a small furry pet that says meow.', a: 'cat', e: 'c-a-t.' },
+          { q: 'Spell: the opposite of night.', a: 'day', e: 'd-a-y.' },
+          { q: 'Spell: it shines in the sky in the daytime.', a: 'sun', e: 's-u-n.' },
+          { q: 'Spell: a pet that barks.', a: 'dog', e: 'd-o-g.' },
+          { q: 'Spell: the colour of a strawberry.', a: 'red', e: 'r-e-d.' }],
       2: [{ q: 'Spell: something you read with pages and a cover.', a: 'book', e: 'b-o-o-k.' },
+          { q: 'Spell: you use it to write.', a: 'pen', e: 'p-e-n.' },
+          { q: 'Spell: the opposite of cold.', a: 'hot', e: 'h-o-t.' },
+          { q: 'Spell: where you live with your family.', a: 'home', e: 'h-o-m-e.' }],
+      3: [{ q: 'Spell: a large grey animal with a trunk.', a: 'elephant',
+            e: 'e-l-e-p-h-a-n-t. The "ph" makes an /f/ sound.' },
           { q: 'Spell: the season after summer.', a: 'autumn',
-            e: 'a-u-t-u-m-n. The n at the end is silent.' }],
+            e: 'a-u-t-u-m-n. The n at the end is silent.' },
+          { q: 'Spell: a person you like and play with.', a: 'friend',
+            e: 'f-r-i-e-n-d. There is an "i" before the "end".' }],
       4: [{ q: 'Spell: a word meaning "happening every year".', a: 'annual',
             e: 'a-n-n-u-a-l — double n.' },
           { q: 'Spell: the study of living things.', a: 'biology', e: 'b-i-o-l-o-g-y.' }]
@@ -456,8 +482,13 @@
 
     community: {
       0: [{ q: 'Who helps put out fires?', a: 'A firefighter', d: ['A baker', 'A pilot'],
-            e: 'Firefighters keep our community safe from fires.' }],
-      2: [{ q: 'What are taxes mostly used for?', a: 'Things everyone shares, like roads',
+            e: 'Firefighters keep our community safe from fires.' },
+          { q: 'Who helps you when you are poorly?', a: 'A doctor', d: ['A builder', 'A farmer'],
+            e: 'Doctors and nurses help people get better.' }],
+      2: [{ q: 'Which of these is a place everyone in a community shares?',
+            a: 'The park', d: ['Your bedroom', 'Your lunchbox'],
+            e: 'Shared places like parks, libraries and roads belong to everyone.' }],
+      3: [{ q: 'What are taxes mostly used for?', a: 'Things everyone shares, like roads',
             d: ['Presents for one person', 'Nothing at all'],
             e: 'Taxes pay for shared things — roads, parks, libraries, schools.' }]
     },

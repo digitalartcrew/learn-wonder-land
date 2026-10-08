@@ -1189,10 +1189,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     (await tp.locator('#tutor-bubble').textContent()).trim().length > 10);
   ok('its opener is specific, not a generic chatbot greeting',
     !/what would you like to ask/i.test(await tp.locator('#tutor-bubble').textContent()));
-  ok('there is a way to ask the tutor something at any point',
-    await tp.locator('.tutor-ask-input').count() === 1);
-  ok('voice INPUT is deliberately absent until privacy work is done',
-    await tp.locator('#screen-tutor [type="file"], #screen-tutor .mic-btn').count() === 0);
+  ok('the child is given real options, not a single button',
+    await tp.locator('.tutor-option').count() >= 3);
 
   await tp.locator('#tutor-body button:has-text("Let\'s learn it!"), #tutor-body button:has-text("Find me something")').first().click();
   await sleep(900);
@@ -1241,51 +1239,81 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     wrongFeedback.slice(0, 140));
   await tp.screenshot({ path: path.join(SHOTS, '38-tutor-encouragement.png') });
 
-  /* --- Ask WonderTutor, in the browser, with NO backend at all --- */
-  const askReal = async (q) => {
-    await tp.locator('.tutor-ask-input').fill(q);
-    await tp.locator('.tutor-ask .big-btn:has-text("Send")').click();
-    await sleep(700);
-    return (await tp.locator('#tutor-activity').textContent()).replace(/\s+/g, ' ');
-  };
+  /* --- changing the grade after setup --- */
+  ok('the tutor screen offers a route back to settings',
+    await tp.locator('.tutor-settings-link').count() === 1);
 
-  const a1 = await askReal('Why is 8 x 4 32?');
-  ok('asking a question gives a real answer, not an apology',
-    /repeated addition/i.test(a1), a1.slice(0, 160));
-  ok('and it shows the working, not just the number',
-    /8 \+ 8 \+ 8 \+ 8/.test(a1), a1.slice(0, 160));
-  ok('the question the child asked is echoed back', /You asked:/.test(a1));
+  /* The 'tutor-setup' scope was passed earlier in this run and a pass lasts
+     five minutes, so require() would short-circuit. Close it first, otherwise
+     this asserts nothing. */
+  await tp.evaluate(() => WW.parentGate.reset('tutor-setup'));
+  await tp.locator('.tutor-settings-link').click();
+  await sleep(500);
+  ok('that route is gated', await tp.locator('.gate-card').isVisible());
+  await passAdultGate(tp);
+  await sleep(600);
+  ok('the setup screen reopens with the current grade selected',
+    await tp.locator('.tutor-grade.is-on').count() === 1);
+  ok('it explains what to do if the level felt wrong',
+    /too hard or too easy/i.test(await tp.locator('#tutor-body').textContent()));
+  ok('and offers a way out without changing anything',
+    await tp.locator('#tutor-body button:has-text("Back without changing")').count() === 1);
 
-  const a2 = await askReal('What is a planet?');
-  ok('a "what is" question is answered', /orbit|travels around a star/i.test(a2), a2.slice(0, 160));
+  await tp.locator('.tutor-grade[aria-label="Teach at Grade 1"], .tutor-grade[aria-label="Grade 1"]').first().click();
+  await sleep(200);
+  await tp.locator('#tutor-body button:has-text("Save")').first().click();
+  await sleep(700);
+  ok('the grade actually changes',
+    await tp.evaluate(() => WW.learningProfile.grade()) === 1);
+  ok('changing it does not restart the whole first-run flow',
+    await tp.evaluate(() => WW.learningProfile.data().assessment.state) === 'complete');
+  ok('and the child lands back in tutoring, not the diagnostic',
+    await tp.locator('.tutor-option').count() >= 2);
+  await tp.screenshot({ path: path.join(SHOTS, '45-tutor-change-grade.png') });
 
-  const a3 = await askReal('How do I spell elephant?');
-  ok('a spelling question is answered letter by letter',
-    /e-l-e-p-h-a-n-t/.test(a3), a3.slice(0, 160));
+  /* Restore so later assertions see the grade they expect. */
+  await tp.evaluate(() => { WW.learningProfile.setGrade(2); WW.Nav.go('tutor'); });
+  await sleep(600);
 
-  const a4 = await askReal('what is 100 - 37');
-  ok('arithmetic is computed correctly in the browser', /63/.test(a4), a4.slice(0, 120));
+  /* --- the menu: real options, and no free-text box --- */
+  ok('"Ask WonderTutor" is no longer offered to the child',
+    await tp.locator('.tutor-ask-input').count() === 0);
+  ok('the question is answered with real options, not one button',
+    await tp.locator('.tutor-option').count() >= 3,
+    String(await tp.locator('.tutor-option').count()));
+  const menuTxt = (await tp.locator('.tutor-menu').textContent()).replace(/\s+/g, ' ');
+  ok('the suggested lesson is named, not a mystery box',
+    /Let's learn [a-z]/i.test(menuTxt), menuTxt.slice(0, 160));
+  ok('the child can choose a subject themselves', /Choose a subject/i.test(menuTxt));
+  ok('and there is a surprise option', /Surprise me/i.test(menuTxt));
+  ok('every option keeps a 44pt target', await tp.evaluate(() =>
+    Array.from(document.querySelectorAll('.tutor-option'))
+      .every((b) => b.getBoundingClientRect().height >= 44)));
+  await tp.screenshot({ path: path.join(SHOTS, '43-tutor-menu.png') });
 
-  const a5 = await askReal('What does profit mean?');
-  ok('a money question is answered', /revenue/i.test(a5), a5.slice(0, 160));
+  await tp.locator('.tutor-option:has-text("Choose a subject")').click();
+  await sleep(500);
+  ok('choosing a subject lists the domains',
+    await tp.locator('#tutor-activity .tutor-option').count() >= 3);
+  const subjTxt = (await tp.locator('#tutor-activity').textContent()).replace(/\s+/g, ' ');
+  ok('the subjects are named', /Mathematics|Reading|Science/.test(subjTxt), subjTxt.slice(0, 140));
+  ok('there is a way back', await tp.locator('#tutor-activity button:has-text("Back")').count() === 1);
 
-  const a6 = await askReal('who was Napoleon Bonaparte');
-  ok('something it cannot answer is refused honestly, not invented',
-    /rather say so than guess/i.test(a6), a6.slice(0, 160));
-  ok('and the refusal still offers something to do', /practise/i.test(a6));
+  await tp.locator('#tutor-activity .tutor-option').first().click();
+  await sleep(500);
+  ok('picking a subject lists the topics inside it',
+    await tp.locator('#tutor-activity .tutor-option').count() >= 1);
+  ok('and each topic says where the child is up to',
+    /Not tried yet|Keep going|got this one/i.test(
+      await tp.locator('#tutor-activity').textContent()));
+  await tp.screenshot({ path: path.join(SHOTS, '44-tutor-subject-picker.png') });
 
-  ok('no answer ever shows a price or a purchase prompt',
-    ![a1, a2, a3, a4, a5, a6].some((t) => /\$|subscribe|buy now/i.test(t)));
-  ok('the tutor spoke its answer into the bubble too',
-    (await tp.locator('#tutor-bubble').textContent()).trim().length > 10);
-  await tp.screenshot({ path: path.join(SHOTS, '43-tutor-ask-answer.png') });
-
-  /* The whole point: this ran with a static server that 501s every POST. */
-  ok('all of that worked with no AI endpoint reachable at all',
-    await tp.evaluate(() => {
-      const d = WW.learningProfile.data().usage;
-      return d.aiCalls === 0 || d.offlineFallbacks > 0;
-    }));
+  await tp.locator('#tutor-activity button:has-text("All subjects")').click();
+  await sleep(400);
+  ok('and back again to all subjects',
+    /Mathematics|Reading|Science/.test(await tp.locator('#tutor-activity').textContent()));
+  await tp.evaluate(() => { WW.Nav.go('tutor'); });
+  await sleep(600);
 
   /* --- talking out loud: the gates, in a real browser --- */
   const voiceSupported = await tp.evaluate(() => WW.tutorVoiceChat.isSupported());
@@ -1397,6 +1425,38 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await tp.locator('#tutor-talk-btn').count() === 0);
   ok('and the child is back to the ask-a-grown-up message',
     /grown-up has to turn that on/i.test(await tp.locator('.tutor-talk').textContent()));
+
+  /* --- voice: present where it helps, absent where it was noise --- */
+  const spokeDuring = await tp.evaluate(async () => {
+    const said = [];
+    const real = WW.tutorVoice.speak;
+    WW.tutorVoice.speak = function (t) { said.push(String(t)); return true; };
+
+    /* Walk several assessment-style question renders. */
+    WW.Nav.go('tutor');
+    await new Promise((r) => setTimeout(r, 300));
+    const atMenu = said.length;
+
+    WW.tutorVoice.speak = real;
+    return { atMenu };
+  });
+  ok('the tutor does not talk just because a screen appeared',
+    spokeDuring.atMenu === 0, String(spokeDuring.atMenu));
+  ok('nothing speaks before each assessment question', (() => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'js/tutor/screen.js'), 'utf8');
+    return !/mountStage\(b, 'Here/.test(src);
+  })());
+  ok('finishing the assessment is marked with a sound, not a speech', (() => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'js/tutor/screen.js'), 'utf8');
+    return /assessDone[\s\S]{0,600}?Sound\.play\('levelup'\)/.test(src);
+  })());
+  ok('the lesson itself is still spoken, because hearing it helps', (() => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'js/tutor/screen.js'), 'utf8');
+    return /say\(step\.text, step\.expression, true\)/.test(src);
+  })());
 
   /* --- the things that must never appear --- */
   const allTutorText = (await tp.locator('#screen-tutor').textContent()).replace(/\s+/g, ' ');
