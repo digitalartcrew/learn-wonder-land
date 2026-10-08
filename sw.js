@@ -24,7 +24,7 @@
    BUMP `VERSION` on every deploy. Old caches are deleted on
    activate, which is what makes updates reliable.
    ============================================================= */
-const VERSION = 'ww-v3';
+const VERSION = 'ww-v4';
 
 /* Canonical URLs only — no .html suffixes that Pages would redirect. */
 const SHELL = [
@@ -50,6 +50,19 @@ const SHELL = [
   'js/worlds/science.js',
   'js/worlds/city.js',
   'js/worlds/business.js',
+  'js/tutor/languages.js',
+  'js/tutor/taxonomy.js',
+  'js/tutor/profile.js',
+  'js/tutor/content.js',
+  'js/tutor/safety.js',
+  'js/tutor/emotion.js',
+  'js/tutor/avatar.js',
+  'js/tutor/voice.js',
+  'js/tutor/provider.js',
+  'js/tutor/assessment.js',
+  'js/tutor/engine.js',
+  'js/tutor/session.js',
+  'js/tutor/screen.js',
   'assets/icon.svg',
   'assets/favicon-32.png',
   'assets/apple-touch-icon.png',

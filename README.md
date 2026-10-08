@@ -92,6 +92,20 @@ WonderWorld/
 │   │                          Knowledge Tree, profile, parent dashboard
 │   ├── plus.js                child premium prompt + grown-ups WonderWorld+ page
 │   ├── devtools.js            development-only tier simulator
+│   ├── tutor/                 WonderTutor (see §10)
+│   │   ├── languages.js       the 12 supported languages + capability states
+│   │   ├── taxonomy.js        domains, skills, grade bands, prerequisites
+│   │   ├── profile.js         WW.learningProfile — grade, language, mastery
+│   │   ├── content.js         offline lesson/question bank + scoring
+│   │   ├── safety.js          outbound allow-list, input/output screening
+│   │   ├── emotion.js         expression allow-list + deterministic rules
+│   │   ├── avatar.js          the animated SVG character
+│   │   ├── voice.js           on-device speech only
+│   │   ├── provider.js        offline + server adapters (no key in client)
+│   │   ├── assessment.js      the adaptive diagnostic
+│   │   ├── engine.js          skill choice, rewards, access
+│   │   ├── session.js         one running lesson
+│   │   └── screen.js          the WonderTutor UI
 │   └── worlds/
 │       ├── math.js            Math Island — adaptive question engine + bridge
 │       ├── story.js           Story Forest — interactive story + reading games
@@ -106,7 +120,9 @@ WonderWorld/
 ├── functions/
 │   └── api/
 │       ├── subscribe.js       POST — stores a parent signup in Cloudflare KV
-│       └── subscribers.js     GET  — token-protected CSV export
+│       ├── subscribers.js     GET  — token-protected CSV export
+│       ├── tutor.js           POST — the only path to a text model
+│       └── tutor-emotion.js   POST — Decisions API, picks the tutor's face
 ├── assets/
 │   ├── icon.svg               app icon (pure SVG — nothing to break)
 │   ├── apple-touch-icon.png   iOS home-screen icon (iOS ignores SVG here)
@@ -116,7 +132,9 @@ WonderWorld/
 │   ├── logic-test.js          headless game-logic tests (node)
 │   └── browser-test.js        full automated playthrough (headless browser)
 ├── docs/
-│   └── MONETIZATION.md        free vs Plus, billing, StoreKit integration path
+│   ├── MONETIZATION.md        free vs Plus, billing, StoreKit integration path
+│   ├── WONDERTUTOR.md         tutor architecture, safety, multilingual plan
+│   └── TUTOR_PRICING.md       AI cost model and pricing analysis
 └── README.md
 ```
 
@@ -150,11 +168,26 @@ WW.sync          // push/pull/status — interface only, no backend
 WW.parentGate    // the reusable adult check
 WW.Premium       // the child-facing "ask a grown-up" prompt
 WW.dev           // tier simulator — inert outside development
+
+// --- WonderTutor (see §10) ---
+WW.tutorLanguages  // the 12 supported languages + what we will claim about each
+WW.tutorTaxonomy   // domains, skills, grade bands, prerequisites
+WW.learningProfile // grade, tutoring language, per-skill mastery
+WW.tutorContent    // offline lessons/questions + deterministic scoring
+WW.tutorSafety     // outbound allow-list, input/output screening
+WW.tutorEmotion    // expression allow-list + deterministic rules
+WW.tutorAvatar     // the animated SVG character
+WW.tutorVoice      // speak/stop/pause/resume — on-device voices only
+WW.tutorProvider   // generate() — offline bank or first-party endpoint
+WW.tutorAssessment // the adaptive diagnostic
+WW.tutor           // nextSkill(), access(), rewards
+WW.tutorSession    // one running lesson
 ```
 
 No module reaches into another's internals — worlds only talk to
-`WW.Progress`, `WW.State` and `WW.UI`, and nothing anywhere talks to a store
-SDK except `WW.billing`. That's what keeps a port to Unity/Godot
+`WW.Progress`, `WW.State` and `WW.UI`, nothing anywhere talks to a store
+SDK except `WW.billing`, and nothing talks to a language model except
+`WW.tutorProvider`. That's what keeps a port to Unity/Godot
 or a native rewrite tractable.
 
 ---
@@ -344,7 +377,16 @@ npm i playwright-core            # then point PW/CHROME_PATH at a Chromium
 node tools/browser-test.js http://127.0.0.1:8111
 ```
 
-**`logic-test.js` (183 checks)** verifies save/load round-trips and
+> If the browser run fails with *"Executable doesn't exist"*, the pinned
+> `playwright-core` wants a newer browser build than the local cache has.
+> Either `npx playwright install`, or point it at an installed Chrome:
+>
+> ```bash
+> CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+>   node tools/browser-test.js http://localhost:8111
+> ```
+
+**`logic-test.js` (294 checks)** verifies save/load round-trips and
 forward-compatible merging, level curves, unlock thresholds, crystal
 restoration, 50 000 generated maths questions (answer always present, no
 duplicate options, arithmetic actually correct), story content integrity, that
@@ -357,7 +399,7 @@ that each one renders valid SVG with a screen-reader description and references
 no external files, and that the celebration audio degrades safely when there is
 no AudioContext.
 
-**`browser-test.js` (184 checks)** plays the game: creates a character, crosses
+**`browser-test.js` (312 checks)** plays the game: creates a character, crosses
 the bridge, deliberately answers wrong to confirm hints appear and nothing
 "fails" the child, reads a whole story chapter including spelling and sentence
 building, runs the plant/magnet/weather experiments, builds a city and watches
@@ -365,8 +407,9 @@ the meters move, runs a day of business and checks the cash matches the stated
 profit, reloads to confirm persistence, audits every visible button for the
 44 pt minimum, confirms illustrations appear during the story, verifies the
 cheer package fires on every celebration and that the voice can be muted
-independently, and repeats key screens at iPhone, iPad-portrait and
-iPad-landscape sizes with big-text mode on. Screenshots land in `.shots/`.
+independently, and repeats key screens at iPhone portrait, **phone landscape
+(844×390)**, iPad portrait and iPad landscape with big-text mode on.
+Screenshots land in `.shots/`.
 
 ### What the monetization tests assert
 
@@ -391,6 +434,35 @@ runs. The additions pin down the promises in §9:
 | Offline shell covers every new script; service worker unchanged in behaviour | logic §20 |
 | No new network requests — nothing left the origin during the browser run | logic §21, browser "Saves, offline and privacy" |
 | Reduced motion, big text and 44 pt targets hold on the new screens | browser, throughout |
+
+### What the WonderTutor tests assert
+
+Suites §22–§28 of the logic tests, plus a dedicated browser block that drives
+the whole first-run flow. Full mapping in
+[docs/WONDERTUTOR.md §24](docs/WONDERTUTOR.md#24-tests).
+
+| Promise | Where it is tested |
+|---|---|
+| The tutor refuses to start without a grade a grown-up set | logic §22, browser |
+| No age or birth-date field exists anywhere in setup | browser (inspects the DOM, not the copy) |
+| The diagnostic adapts — up on success, **down** on repeated difficulty | logic §24 (all-right and all-wrong runs) |
+| Skills in different subjects hold different levels | logic §25 |
+| A level never rises without the mastery to back it | logic §25 |
+| Foundations are taught before what sits on top of them | logic §26 |
+| All 12 languages appear; Kosraean and Hawaiian are not teachable yet | logic §23, browser |
+| Tutoring language and language-being-learned never bleed into each other | logic §23 |
+| **An invented animation state cannot reach the renderer** | logic §28, browser |
+| The expression layer has a deterministic answer for every signal | logic §28 |
+| No API key, no model endpoint, nothing identifying in client code | logic §27 |
+| The outbound context carries no nickname, email, avatar or save data | logic §27, browser |
+| The tutor never asks a child for personal information | logic §27 |
+| A child's own PII is stopped **on the device**, before any request | logic §27 |
+| A wrong answer is met with encouragement and never with shaming | browser |
+| No price, no purchase wording and no token counter is shown to a child | browser |
+| **Killing `fetch` outright does not break the tutor or the game** | browser |
+| Reduced motion stops the movement but the face still changes | browser |
+| Existing saves, monetization, entitlements and free worlds are untouched | logic §28 |
+| Tutoring rewards cannot be farmed by repeating one lesson | logic §28 |
 
 ---
 
@@ -641,7 +713,143 @@ which only renders in development.
 
 ---
 
-## 10. Sound and celebrations
+## 10. WonderTutor
+
+Full detail is in **[docs/WONDERTUTOR.md](docs/WONDERTUTOR.md)**; the cost model
+and pricing analysis are in **[docs/TUTOR_PRICING.md](docs/TUTOR_PRICING.md)**.
+This section is the summary.
+
+WonderTutor is an animated AI tutor inside WonderWorld. It knows the child's
+grade, works out their level in each skill separately, teaches short lessons,
+sets practice, checks mastery, revisits what has gone stale, and advances on
+evidence. It is a WonderWorld character — SVG, CSS and vanilla JS, no animation
+library — not a chat window with a mascot beside it.
+
+It is a **WonderWorld+ feature**, with a free demo. The five-world adventure is
+unchanged and still free.
+
+### It never opens with "what would you like to ask?"
+
+```
+Meet WonderTutor → Grade (a grown-up, behind the gate) → Tutoring language
+  → "Let's see what you already know!" → Learning path → First lesson
+```
+
+The tutor refuses to start without a grade. We never ask for a birth date,
+never ask a child's age, and never infer age from grade — there is no age field
+anywhere in setup. The child's version is *"Let's see what you already know!"*;
+the parent dashboard calls the same thing an **Initial Skills Assessment**.
+
+### A child is not one number
+
+Grade is what they are enrolled in; **level is per skill**. A Grade 2 child can
+be at Grade 3 multiplication and Grade 1 spelling at once. Six domains, 34
+skills, each with a grade range and prerequisites.
+
+```js
+WW.learningProfile.setGrade(2);
+WW.learningProfile.band('multiplication');   // 'above'
+WW.learningProfile.band('spelling');         // 'approaching'
+```
+
+Those four words — `below` / `approaching` / `on` / `above` grade level —
+describe a **skill**. Nothing here diagnoses, rates or labels a child. See
+[docs/WONDERTUTOR.md §2](docs/WONDERTUTOR.md#2-what-this-is-not).
+
+### The loop
+
+```
+ASSESS → TEACH → PRACTISE → CHECK → ADAPT → REVIEW → ADVANCE
+```
+
+Practice gives help and lets the child retry; the check does not, and only the
+check counts towards mastery. A missed answer gets *"Almost! Let's look at it
+another way."* and a different explanation — never "wrong again".
+
+### It works on a plane
+
+Every question, every score, every mastery decision and every level move is
+ordinary JavaScript. A model is asked only for the things it is genuinely
+better at: explanations for prose skills, re-explaining after difficulty, and
+answering a child's own question.
+
+That is not only a robustness decision — it is most of the cost model. See
+[§16 Cost controls](docs/WONDERTUTOR.md#16-cost-controls).
+
+### No key in the browser
+
+`WW.tutorProvider` talks to `/api/tutor`, a first-party Cloudflare Function on
+our own origin. There is no OpenAI SDK in the client, no key, and no provider
+URL — tests assert all three. **With no key configured the endpoint returns 503
+and the tutor uses its offline bank, which is how this ships today.**
+
+### Safety and privacy
+
+The outbound context is built by **allow-list**: grade, language, skill, level,
+band, small counters, world names, and one short screened question. Absent by
+construction: the nickname, the avatar, the parent's email, the save file, and
+any identifier. The child's own words are screened before they leave the
+device, and the tutor's words are screened before the child sees them — from a
+model or the offline bank alike.
+
+The learning profile lives in its own key, `wonderworld.tutor.v1`, **never
+inside the child's save**.
+
+### The modules
+
+| File | Responsibility |
+|---|---|
+| `js/tutor/languages.js` | The 12 supported languages and what we will claim about each |
+| `js/tutor/taxonomy.js` | Domains, skills, grade bands, prerequisites |
+| `js/tutor/profile.js` | `WW.learningProfile` — grade, language, per-skill mastery |
+| `js/tutor/content.js` | Offline lesson and question bank; deterministic scoring |
+| `js/tutor/safety.js` | Outbound allow-list, input and output screening |
+| `js/tutor/emotion.js` | Expression allow-list + deterministic rules |
+| `js/tutor/avatar.js` | `WW.tutorAvatar` — the SVG character |
+| `js/tutor/voice.js` | On-device speech only |
+| `js/tutor/provider.js` | Offline and server adapters |
+| `js/tutor/assessment.js` | The adaptive diagnostic |
+| `js/tutor/engine.js` | `WW.tutor` — skill choice, rewards, access |
+| `js/tutor/session.js` | One running lesson |
+| `js/tutor/screen.js` | The UI |
+
+### Languages
+
+Twelve **Supported Languages** — deliberately not called the world's most-spoken,
+because rankings disagree. Quality is **not** claimed to be equal:
+
+- **supported** — English. Human-written, reviewed content.
+- **beta** — nine languages the model can tutor in, with no native-speaker
+  review. The UI says so.
+- **experimental** — Kosraean and Hawaiian. Listed and visible, but **not**
+  offered as a teaching medium until a native speaker validates them.
+
+Tutoring language (what the tutor *speaks*) and a language being learned (a
+*subject*) are separate fields and neither is ever inferred from the other.
+
+### Free vs WonderWorld+
+
+```js
+WW.tutor.ACCESS = {
+  freeAssessment: true,    // the whole diagnostic, free
+  freeLessons: 1,          // then the premium door
+  plusLessonsPerDay: 40    // fair use, shown to parents only
+};
+```
+
+A child never sees a price, a token counter or a quota. At the door they get
+the same friendly handover as every other premium feature.
+
+### Failure mode
+
+No internet, no key, a dead endpoint, a 503, no speech synthesis — the tutor
+keeps teaching from its offline bank, and the rest of WonderWorld is untouched.
+When there is genuinely nothing to do: *"WonderTutor is resting right now. You
+can keep exploring WonderWorld!"*
+
+---
+
+## 11. Sound and celebrations
 
 All audio is generated at runtime — there are no sound files to download.
 
@@ -664,7 +872,7 @@ Two independent switches in **Settings**:
 - **Cheering voice** — turns off only the spoken praise, keeping the chimes and
   applause, for families who find text-to-speech distracting
 
-## 11. What it teaches
+## 12. What it teaches
 
 | World | Skills |
 |---|---|
@@ -681,7 +889,7 @@ from the child's game and needs no login.
 
 ---
 
-## 12. Child-safety design
+## 13. Child-safety design
 
 **Included:** XP, gems, badges, Knowledge Tree growth, world unlocking,
 celebration animations, encouraging feedback, and hints instead of failure.
@@ -712,7 +920,7 @@ passages via the device's speech synthesiser.
 
 ---
 
-## 13. Packaging it as an iOS / iPadOS app
+## 14. Packaging it as an iOS / iPadOS app
 
 ### Option A — Home Screen web app (zero work, available today)
 Safari → **Share → Add to Home Screen**. Full-screen, offline-capable once
@@ -787,7 +995,7 @@ them as-is and rebuild only the rendering layer.
 
 ---
 
-## 14. Performance notes
+## 15. Performance notes
 
 No frameworks, no bundler, no fonts to download, no images to fetch. All art —
 including the eleven story illustrations — is SVG, CSS gradients and emoji; all
@@ -799,7 +1007,7 @@ and every one of them is disabled under `prefers-reduced-motion` or the in-game
 
 ---
 
-## 15. Roadmap
+## 16. Roadmap
 
 - 🚀 **WonderSpace** — the sixth world. Already declared `tier: 'plus'` and
   gated on all five crystals, but the world itself is not built: it still shows
@@ -814,4 +1022,20 @@ and every one of them is disabled under `prefers-reduced-motion` or the in-game
   policy update that has to come first.
 - Connecting Apple StoreKit — step-by-step in
   [docs/MONETIZATION.md](docs/MONETIZATION.md).
+
+**WonderTutor next steps** (detail in
+[docs/WONDERTUTOR.md §25](docs/WONDERTUTOR.md#25-production-risks)):
+
+- Decide the pricing question in
+  [docs/TUTOR_PRICING.md §8](docs/TUTOR_PRICING.md#8-recommendation) — the AI
+  cost turns out to be ~2 cents per subscriber per month, so a price change is
+  a value decision, not a cost one.
+- **Native-speaker validation for one beta language end to end** (Spanish
+  first), including a per-language content pack. That turns the multilingual
+  claim from architecture into product.
+- A lesson-sampling review tool. Safety filters catch categories of bad output;
+  they do not catch a confidently wrong explanation of fractions.
+- Turn the Decisions API expression layer on behind a flag and measure whether
+  anyone can tell it from the deterministic rules.
+
 # learn-wonder-land

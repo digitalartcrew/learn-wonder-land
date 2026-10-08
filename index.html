@@ -104,6 +104,10 @@
         <div class="map-nodes" id="map-nodes"></div>
       </div>
       <div class="map-caption" id="map-caption"></div>
+      <!-- WonderTutor's way in. Deliberately not a map node: it is not a
+           world to be unlocked by learning, it is a guide that is always
+           there. -->
+      <div class="map-tutor" id="map-tutor"></div>
     </div>
   </section>
 
@@ -166,6 +170,17 @@
     <div class="world-body" id="business-body"></div>
   </section>
 
+  <!-- ======================= WONDERTUTOR =======================
+       A child-facing screen, so it carries the normal HUD and never a price.
+       Grade setup sits behind the parental gate, inside the screen body. -->
+  <section class="screen" id="screen-tutor" aria-label="WonderTutor">
+    <header class="world-bar tutor-bar">
+      <button class="icon-btn" id="tutor-back" aria-label="Back to the map"><span aria-hidden="true">←</span></button>
+      <h2><span aria-hidden="true">✨</span> WonderTutor</h2><div class="bar-space"></div>
+    </header>
+    <div class="world-body" id="tutor-body"></div>
+  </section>
+
   <!-- ======================= PARENT DASHBOARD ======================= -->
   <section class="screen parent-screen" id="screen-parent" aria-label="Parent dashboard">
     <header class="world-bar parent">
@@ -218,6 +233,22 @@
 <script src="js/art.js"></script>
 <script src="js/screens.js"></script>
 <script src="js/plus.js"></script>
+<!-- WonderTutor. Dependency order: vocabulary, then state, then behaviour,
+     then the screen that drives it. Everything here degrades to the offline
+     lesson bank, so none of it depends on the network. -->
+<script src="js/tutor/languages.js"></script>
+<script src="js/tutor/taxonomy.js"></script>
+<script src="js/tutor/profile.js"></script>
+<script src="js/tutor/content.js"></script>
+<script src="js/tutor/safety.js"></script>
+<script src="js/tutor/emotion.js"></script>
+<script src="js/tutor/avatar.js"></script>
+<script src="js/tutor/voice.js"></script>
+<script src="js/tutor/provider.js"></script>
+<script src="js/tutor/assessment.js"></script>
+<script src="js/tutor/engine.js"></script>
+<script src="js/tutor/session.js"></script>
+<script src="js/tutor/screen.js"></script>
 <script src="js/worlds/math.js"></script>
 <script src="js/worlds/story.js"></script>
 <script src="js/worlds/science.js"></script>

@@ -1173,6 +1173,15 @@ window.WW = window.WW || {};
         if (WW.parentGate) WW.parentGate.reset();
       }
 
+      /* Leaving WonderTutor by ANY route — back button, map tap, deep link —
+         must stop the speech and tear the character down. Doing it here
+         rather than only on the back button means there is no exit that
+         leaves a voice talking over the next screen. */
+      if (prev === 'tutor' && name !== 'tutor' &&
+          WW.Screens.tutor && WW.Screens.tutor.leave) {
+        WW.Screens.tutor.leave();
+      }
+
       var chrome = (name !== 'title' && name !== 'create' && !isAdultScreen(name));
       HUD.show(chrome && State.data.hasCharacter);
       Buddy.show(chrome && State.data.hasCharacter);
@@ -1421,6 +1430,15 @@ window.WW = window.WW || {};
         var w = WW.Worlds[id];
         if (w && w.back) w.back(); else Nav.go(id === 'parent' ? 'title' : 'map');
       });
+    });
+
+    /* WonderTutor stops speaking and unmounts its character on the way out,
+       so a voice can never carry on over the next screen. */
+    var tutorBack = document.getElementById('tutor-back');
+    if (tutorBack) tutorBack.addEventListener('click', function () {
+      Sound.play('tap');
+      if (WW.Screens.tutor && WW.Screens.tutor.leave) WW.Screens.tutor.leave();
+      Nav.go('map');
     });
 
     /* The WonderWorld+ page sits inside the grown-ups area, so back goes to

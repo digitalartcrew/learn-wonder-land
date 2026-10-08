@@ -1010,6 +1010,340 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
      go wrong: six stacked cards on a short landscape viewport, and a layout
      that was only ever designed one column wide stretched across 1180pt.
      ========================================================================= */
+  /* =========================================================================
+     WONDERTUTOR
+     Driven in a fresh context so none of the tier-simulation above can leak
+     in. A new Explorer should meet the tutor, be handed to a grown-up for the
+     grade, sit the diagnostic, and get a real lesson — all without a model,
+     because nothing here configures one.
+     ========================================================================= */
+  console.log('\n— WonderTutor —');
+  const tutorCtx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3, isMobile: true, hasTouch: true
+  });
+  const tp = await tutorCtx.newPage();
+  tp.on('pageerror', (e) => errors.push('tutor pageerror: ' + e.message));
+  tp.on('console', (m) => { if (m.type() === 'error') errors.push('tutor console: ' + m.text()); });
+
+  /* Every URL this context asks for, so we can prove the tutor added no
+     third-party network surface. */
+  const tutorRequests = [];
+  tp.on('request', (r) => tutorRequests.push(r.url()));
+
+  await tp.goto(BASE + '/index.html', { waitUntil: 'load' });
+  await sleep(800);
+
+  await tp.evaluate(() => {
+    WW.State.data.hasCharacter = true;
+    WW.State.data.player.name = 'Ada';
+    WW.State.save(true);
+    WW.Nav.go('map');
+  });
+  await sleep(600);
+
+  ok('the tutor has a way in from the map', await tp.locator('#map-tutor-btn').isVisible());
+  ok('it did not become an eighth world node', await tp.locator('.map-node').count() === 7);
+  const entryTxt = (await tp.locator('#map-tutor-btn').textContent()).replace(/\s+/g, ' ');
+  ok('the map entry shows no price', !/\$/.test(entryTxt), entryTxt);
+  ok('and it is labelled by name', /WonderTutor/.test(entryTxt));
+
+  await tp.locator('#map-tutor-btn').click();
+  await sleep(600);
+  ok('the WonderTutor screen opens', await tp.locator('#screen-tutor.active').isVisible());
+  ok('the animated character is rendered as SVG',
+    await tp.locator('#screen-tutor .tutor-svg').count() === 1);
+  ok('the character has a face that can change',
+    await tp.locator('#screen-tutor .tutor-mouth').count() === 1 &&
+    await tp.locator('#screen-tutor .tutor-eye').count() === 2);
+
+  const meetTxt = (await tp.locator('#tutor-body').textContent()).replace(/\s+/g, ' ');
+  ok('a new Explorer meets the tutor rather than an empty chat box',
+    /Meet WonderTutor/i.test(meetTxt), meetTxt.slice(0, 120));
+  ok('the tutor does NOT open with "what would you like to ask?"',
+    !/what would you like to ask/i.test(meetTxt));
+  ok('no price is shown to the child at the meeting', !/\$/.test(meetTxt));
+
+  /* --- grade is a grown-up's decision, behind the gate --- */
+  await tp.locator('#tutor-body button:has-text("Ask a Grown-Up")').click();
+  await sleep(500);
+  ok('setting the grade requires an adult', await tp.locator('.gate-card').isVisible());
+  ok('the tutor cannot be set up without passing the gate',
+    await tp.evaluate(() => WW.learningProfile.grade() === null));
+
+  await passAdultGate(tp);
+  await sleep(600);
+  const setupTxt = (await tp.locator('#tutor-body').textContent()).replace(/\s+/g, ' ');
+  ok('the grown-up gets the setup screen', /WonderTutor setup/i.test(setupTxt));
+  /* The reassurance copy says the words "age" and "birth date", so matching on
+     text would fail on our own promise. What matters is that there is no field
+     to type either one into. */
+  ok('there is no age or birth-date field anywhere in setup',
+    await tp.evaluate(() => {
+      const fields = Array.from(document.querySelectorAll('#tutor-body input, #tutor-body select'));
+      return !fields.some((f) => {
+        const hay = [f.type, f.name, f.id, f.placeholder,
+                     f.getAttribute('aria-label') || ''].join(' ').toLowerCase();
+        return f.type === 'date' || /\bage\b|birth|dob|year of/.test(hay);
+      });
+    }));
+  ok('it says plainly that we do not ask a child their age',
+    /never ask a child for their age/i.test(setupTxt));
+
+  ok('all seven grades from Kindergarten to Grade 6 are offered',
+    await tp.locator('.tutor-grade').count() === 7);
+  ok('all 12 tutoring languages appear',
+    await tp.locator('.tutor-lang').count() === 12,
+    String(await tp.locator('.tutor-lang').count()));
+  ok('capability is shown as a word, not only a colour',
+    (await tp.locator('.tutor-lang .tutor-lang-state').allTextContents())
+      .filter((t) => /ready|beta|needs validation/.test(t)).length === 12);
+  ok('Kosraean and Hawaiian are visibly not ready',
+    await tp.locator('.tutor-lang.is-unready').count() === 2);
+  ok('the tutoring language is distinguished from learning a language',
+    /not the same as learning a language as a subject/i.test(setupTxt));
+
+  /* A language we cannot vouch for must not become the teaching medium. */
+  await tp.locator('.tutor-lang[data-lang="haw"]').click();
+  await sleep(300);
+  ok('choosing an unvalidated language explains why it is unavailable',
+    /native speaker/i.test(await tp.locator('.tutor-lang-note').textContent()));
+  ok('and does not set it as the teaching language',
+    await tp.evaluate(() => WW.learningProfile.language()) !== 'haw');
+
+  await tp.locator('.tutor-grade[aria-label="Grade 2"]').click();
+  await sleep(200);
+  await tp.locator('#tutor-body button:has-text("Save and continue")').click();
+  await sleep(700);
+  ok('the grade is saved once a grown-up chooses it',
+    await tp.evaluate(() => WW.learningProfile.grade()) === 2);
+
+  /* --- the diagnostic --- */
+  const assessTxt = (await tp.locator('#tutor-body').textContent()).replace(/\s+/g, ' ');
+  ok('the assessment is introduced as a friendly look, never a test',
+    /what you already know/i.test(assessTxt));
+  ok('the child never sees the words test, exam or score',
+    !/\b(exam|test|quiz|score)\b/i.test(assessTxt), assessTxt.slice(0, 200));
+
+  await tp.locator('#tutor-body button:has-text("I\'m ready!")').click();
+  await sleep(600);
+  ok('the diagnostic starts',
+    await tp.evaluate(() => WW.learningProfile.data().assessment.state) === 'in-progress');
+
+  /* Answer the whole diagnostic honestly, the way a child would: read the
+     question off the screen and answer it. */
+  let steps = 0;
+  while (steps < 40) {
+    const done = await tp.evaluate(() => WW.learningProfile.data().assessment.state === 'complete');
+    if (done) break;
+    const hasChoice = await tp.locator('#tutor-body .choice-btn').count();
+    const hasInput = await tp.locator('#tutor-body .tutor-input').count();
+    const hasNext = await tp.locator('#tutor-body button:has-text("Next")').count();
+    const hasStart = await tp.locator('#tutor-body button:has-text("Start my first lesson")').count();
+
+    if (hasStart) break;
+    if (hasNext) { await tp.locator('#tutor-body button:has-text("Next")').click(); }
+    else if (hasChoice) { await tp.locator('#tutor-body .choice-btn').first().click(); }
+    else if (hasInput) {
+      const answer = await tp.evaluate(() => {
+        /* The test answers correctly on purpose: we are checking the machinery
+           runs end to end, not simulating a particular child. */
+        const q = WW.tutorAssessment._state && WW.tutorAssessment._state.current;
+        return q ? q.answer : '1';
+      });
+      await tp.locator('#tutor-body .tutor-input').fill(String(answer));
+      await tp.locator('#tutor-body button:has-text("Answer")').click();
+    } else break;
+    steps++;
+    await sleep(260);
+  }
+  ok('the diagnostic completes without a model or a network call',
+    await tp.evaluate(() => WW.learningProfile.data().assessment.state) === 'complete',
+    'after ' + steps + ' interactions');
+  ok('it took a child-sized number of interactions',
+    steps >= 8 && steps <= 45, String(steps));
+
+  const pathTxt = (await tp.locator('#tutor-body').textContent()).replace(/\s+/g, ' ');
+  ok('the child is shown a learning path afterwards', /learning path/i.test(pathTxt));
+  ok('the path names subjects and starting levels',
+    await tp.locator('.tutor-path li').count() >= 3,
+    String(await tp.locator('.tutor-path li').count()));
+  await tp.screenshot({ path: path.join(SHOTS, '36-tutor-path.png') });
+
+  /* --- a real lesson --- */
+  await tp.locator('#tutor-body button:has-text("Start my first lesson")').click();
+  await sleep(700);
+  ok('the tutor proposes a lesson without being asked a question',
+    (await tp.locator('#tutor-bubble').textContent()).trim().length > 10);
+  ok('its opener is specific, not a generic chatbot greeting',
+    !/what would you like to ask/i.test(await tp.locator('#tutor-bubble').textContent()));
+  ok('there is a way to ask the tutor something at any point',
+    await tp.locator('.tutor-ask-input').count() === 1);
+  ok('voice INPUT is deliberately absent until privacy work is done',
+    await tp.locator('#screen-tutor [type="file"], #screen-tutor .mic-btn').count() === 0);
+
+  await tp.locator('#tutor-body button:has-text("Let\'s learn it!"), #tutor-body button:has-text("Find me something")').first().click();
+  await sleep(900);
+  const lessonTxt = (await tp.locator('#tutor-activity').textContent()).replace(/\s+/g, ' ');
+  ok('a short lesson is delivered', lessonTxt.length > 40, lessonTxt.slice(0, 80));
+  ok('the lesson is short enough for a child', lessonTxt.length < 900, String(lessonTxt.length));
+  await tp.screenshot({ path: path.join(SHOTS, '37-tutor-lesson.png') });
+
+  await tp.locator('#tutor-activity button:has-text("Got it")').click();
+  await sleep(600);
+  ok('practice follows the lesson',
+    /Practice 1 of/i.test(await tp.locator('#tutor-activity').textContent()));
+
+  /* Answer one practice question wrongly on purpose: the response must
+     encourage, never shame. */
+  const wrongFeedback = await (async () => {
+    const hasChoice = await tp.locator('#tutor-activity .choice-btn').count();
+    if (hasChoice) {
+      const right = await tp.evaluate(() => WW.tutorSession._q && WW.tutorSession._q.answer);
+      const buttons = await tp.locator('#tutor-activity .choice-btn').allTextContents();
+      const wrongIdx = buttons.findIndex((b) => b.trim() !== String(right));
+      await tp.locator('#tutor-activity .choice-btn').nth(Math.max(0, wrongIdx)).click();
+    } else {
+      await tp.locator('#tutor-activity .tutor-input').fill('zzzz');
+      await tp.locator('#tutor-activity button:has-text("Answer")').click();
+    }
+    await sleep(600);
+    return (await tp.locator('#tutor-activity, #tutor-bubble').allTextContents()).join(' ');
+  })();
+  ok('a wrong answer is met with encouragement',
+    /almost|not quite|another way|have another go|close/i.test(wrongFeedback),
+    wrongFeedback.slice(0, 140));
+  ok('a wrong answer is NEVER met with shaming language',
+    !/wrong again|that's easy|you should know|incorrect|failed/i.test(wrongFeedback),
+    wrongFeedback.slice(0, 140));
+  await tp.screenshot({ path: path.join(SHOTS, '38-tutor-encouragement.png') });
+
+  /* --- the things that must never appear --- */
+  const allTutorText = (await tp.locator('#screen-tutor').textContent()).replace(/\s+/g, ' ');
+  ok('NO PRICE is ever shown on the tutor screen', !/\$\d/.test(allTutorText), allTutorText.slice(0, 160));
+  ok('no purchase wording is shown to the child',
+    !/subscribe|credit card|checkout|buy now/i.test(allTutorText));
+  ok('no token or credit counter is shown to the child',
+    !/tokens? (remaining|left)|credits? (remaining|left)|\d+ tokens/i.test(allTutorText));
+
+  /* --- the AI boundary, as actually loaded in a browser --- */
+  const aiFacts = await tp.evaluate(() => {
+    const ctx = WW.tutorSafety.buildContext({
+      skillId: 'addition', level: 1, intent: 'lesson', worldsPlayed: ['math']
+    });
+    return {
+      ctx: JSON.stringify(ctx),
+      nickname: WW.State.data.player.name,
+      decisionsOff: WW.tutorEmotion.useDecisionsAPI === false,
+      badState: WW.tutorAvatar.setState('totally_made_up'),
+      goodState: WW.tutorAvatar.setState('happy'),
+      offlineWorks: !!WW.tutorContent.question('addition', 1)
+    };
+  });
+  ok('the outbound context never carries the child\'s nickname',
+    aiFacts.ctx.indexOf(aiFacts.nickname) === -1, aiFacts.ctx.slice(0, 160));
+  ok('an invented animation state cannot reach the renderer', aiFacts.badState === false);
+  ok('a real animation state is accepted', aiFacts.goodState === true);
+  ok('the Decisions API stays off until it is configured', aiFacts.decisionsOff);
+  ok('the offline lesson bank works in the browser', aiFacts.offlineWorks);
+
+  ok('the tutor made no third-party network request',
+    tutorRequests.every((u) => u.startsWith(BASE) || u.startsWith('data:') || u.startsWith('blob:')),
+    tutorRequests.filter((u) => !u.startsWith(BASE)).slice(0, 3).join(' | '));
+  ok('and never called a model provider directly',
+    !tutorRequests.some((u) => /openai|anthropic|googleapis/i.test(u)));
+
+  /* --- failure must not take the game with it --- */
+  const survives = await tp.evaluate(async () => {
+    /* Break the provider the way a dead endpoint would. */
+    WW.tutorProvider.providers.server.enabled = true;
+    const realFetch = window.fetch;
+    window.fetch = function () { return Promise.reject(new Error('network down')); };
+    let text = null, threw = false;
+    try {
+      const r = await WW.tutorProvider.generate('answer', { skillId: 'addition' });
+      text = r.text;
+    } catch (e) { threw = true; }
+    window.fetch = realFetch;
+    WW.tutorProvider.providers.server.enabled = true;
+    return { threw, text, gameAlive: !!WW.State.data && typeof WW.Progress.addXP === 'function' };
+  });
+  ok('a dead AI endpoint does not throw', survives.threw === false);
+  ok('it falls back to something kind to show the child',
+    !!survives.text && survives.text.length > 10, String(survives.text));
+  ok('and the rest of WonderWorld is untouched', survives.gameAlive);
+
+  await tp.evaluate(() => { WW.Nav.go('map'); });
+  await sleep(500);
+  ok('the game still works after the tutor failed',
+    await tp.locator('#screen-map.active').isVisible() &&
+    await tp.locator('.map-node').count() === 7);
+
+  /* --- reduced motion --- */
+  await tp.evaluate(() => {
+    WW.State.data.settings.reduceMotion = true;
+    WW.Settings.apply();
+    WW.Nav.go('tutor');
+  });
+  await sleep(600);
+  ok('reduce-motion is applied to the tutor screen too',
+    await tp.evaluate(() => document.body.classList.contains('reduce-motion')));
+  const motion = await tp.evaluate(() => {
+    const head = document.querySelector('.tutor-avatar .tutor-head');
+    if (!head) return null;
+    return { animation: getComputedStyle(head).animationName };
+  });
+  ok('the idle float animation is switched off under reduced motion',
+    !!motion && motion.animation === 'none', motion ? motion.animation : 'no avatar');
+  ok('but the face can still change, because expression is information',
+    await tp.evaluate(() => WW.tutorAvatar.setState('celebrating') === true &&
+      document.querySelector('.tutor-avatar').classList.contains('is-celebrating')));
+  ok('blinking stops under reduced motion',
+    await tp.evaluate(() => { WW.tutorAvatar.refreshMotion(); return WW.tutorAvatar._blink === null; }));
+  await tp.evaluate(() => { WW.State.data.settings.reduceMotion = false; WW.Settings.apply(); });
+
+  /* --- the parent report --- */
+  await tp.evaluate(() => { WW.Nav.go('parent'); });
+  await sleep(500);
+  await passAdultGate(tp);
+  await sleep(700);
+  const tutorParentTxt = (await tp.locator('#parent-body').textContent()).replace(/\s+/g, ' ');
+  ok('the parent dashboard reports on WonderTutor', /WonderTutor/.test(tutorParentTxt));
+  ok('a grown-up sees the real name for the assessment',
+    /Initial Skills Assessment/.test(tutorParentTxt));
+  ok('the grade setting is shown to the parent', /Grade setting/.test(tutorParentTxt));
+  ok('per-subject levels are reported in words, not only colour',
+    /(on|above|below|approaching) grade level/.test(tutorParentTxt), tutorParentTxt.slice(0, 200));
+  ok('the report states it is not a diagnosis',
+    /does not diagnose/i.test(tutorParentTxt));
+  ok('the report is a summary, not a chat transcript',
+    !/you asked:/i.test(tutorParentTxt));
+  ok('still no subscription price in the dashboard', !SUB_PRICE.test(tutorParentTxt),
+    (tutorParentTxt.match(SUB_PRICE) || []).join(','));
+  await fullShot(tp, '39-tutor-parent-report.png');
+
+  /* --- the premium door, for a free Explorer out of demo --- */
+  await tp.evaluate(() => {
+    WW.entitlements.clear();
+    const d = WW.learningProfile.data();
+    d.lessonsCompleted = WW.tutor.ACCESS.freeLessons;
+    WW.learningProfile.save();
+    WW.Nav.go('tutor');
+  });
+  await sleep(700);
+  const lockedTxt = (await tp.locator('#tutor-body').textContent()).replace(/\s+/g, ' ');
+  ok('a free Explorer out of demo lessons gets the friendly handover',
+    /ask a grown-up/i.test(lockedTxt), lockedTxt.slice(0, 160));
+  ok('the handover names WonderWorld+ without naming a price',
+    /WonderWorld\+/.test(lockedTxt) && !/\$/.test(lockedTxt));
+  ok('and it reassures rather than punishes',
+    /still yours|keep exploring/i.test(lockedTxt));
+  ok('there is still a way back into the game',
+    await tp.locator('#tutor-body button:has-text("Back to the map")').count() === 1);
+  await tp.screenshot({ path: path.join(SHOTS, '40-tutor-locked.png') });
+
+  await tutorCtx.close();
+
   console.log('\n— WonderWorld+ on a tablet —');
 
   const tabletPlus = async (pg, label, shotPrompt, shotPlus) => {

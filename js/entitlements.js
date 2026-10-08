@@ -61,6 +61,12 @@
     'read-aloud':            { tier: 'free', name: 'Read-aloud and audio' },
 
     /* --- WonderWorld+ --- */
+    /* WonderTutor is the one Plus feature with a real marginal cost per use,
+       so unlike the others it also carries a fair-use ceiling. That lives in
+       WW.tutor.ACCESS, not here: this answers "may they", not "how much". */
+    'wonder-tutor':             { tier: 'plus', name: 'WonderTutor',
+                                  blurb: 'A personal learning guide that teaches at exactly the right level.' },
+
     'multi-profile':            { tier: 'plus', name: 'Multiple Explorer profiles',
                                   blurb: 'Up to four Explorers, each with their own adventure.' },
     'advanced-parent-reports':  { tier: 'plus', name: 'Advanced learning reports',

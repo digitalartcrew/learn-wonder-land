@@ -1333,3 +1333,227 @@ body.reduce-motion #sky { display: none; }
   .plus-pricing .plan-card { text-align: center; }
   .legal-links .ghost-btn { flex: 0 1 auto; }
 }
+
+/* ===========================================================
+   WONDERTUTOR
+   The character is SVG and every expression is a class on
+   .tutor-avatar. JavaScript decides what the tutor feels; this
+   file decides what that looks like. Nothing in js/tutor/ writes
+   a style string.
+   =========================================================== */
+
+/* --- the stage: character + speech bubble ----------------- */
+.tutor-stage {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 12px; margin-bottom: 14px;
+}
+.tutor-art { width: min(44vw, 170px); }
+.tutor-bubble {
+  position: relative; max-width: 100%;
+  background: var(--panel); color: var(--ink);
+  border-radius: var(--radius); padding: 14px 18px;
+  box-shadow: var(--shadow-soft); font-weight: 700;
+  text-align: center; margin: 0;
+}
+.tutor-bubble::after {
+  content: ''; position: absolute; top: -9px; left: 50%;
+  width: 18px; height: 18px; background: var(--panel);
+  transform: translateX(-50%) rotate(45deg); border-radius: 3px;
+}
+.tutor-bubble:empty { display: none; }
+
+/* --- the character ---------------------------------------- */
+.tutor-avatar { width: 100%; }
+.tutor-svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+.tutor-halo { fill: rgba(255, 207, 61, .18); transition: r .4s ease, fill .4s ease; }
+.tutor-head { transition: transform .3s ease; }
+.tutor-tuft { fill: var(--gold-deep); opacity: .9; transform-origin: 80px 36px; }
+.tutor-cheek { fill: #ff9bb4; opacity: .35; transition: opacity .3s ease; }
+.tutor-eye-white { fill: #fffdf6; }
+.tutor-pupil { fill: #2b2152; transition: transform .25s ease; }
+.tutor-spark { fill: #ffffff; opacity: .9; }
+.tutor-brow {
+  fill: none; stroke: #8a5a05; stroke-width: 4; stroke-linecap: round;
+  transition: transform .3s ease; transform-origin: center;
+}
+.tutor-mouth {
+  fill: none; stroke: #8a5a05; stroke-width: 5; stroke-linecap: round;
+  transition: stroke-width .25s ease;
+}
+
+/* idle float — decoration, removed under reduced motion */
+.tutor-avatar .tutor-head,
+.tutor-avatar .tutor-tuft { animation: tutorFloat 4.2s ease-in-out infinite; }
+@keyframes tutorFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+/* blink: squash the eyes rather than hide them, so nothing jumps */
+.tutor-avatar.is-blinking .tutor-eye { transform: scaleY(.12); }
+.tutor-eye { transform-origin: center 76px; transition: transform .08s ease; }
+
+/* --- expressions ------------------------------------------
+   Each state is a mouth shape, a brow angle and a cheek level.
+   Expression is INFORMATION, so these still apply when motion
+   is reduced — only the movement between them is suppressed. */
+
+.tutor-avatar.is-happy .tutor-cheek    { opacity: .55; }
+
+.tutor-avatar.is-excited .tutor-mouth  { stroke-width: 6; }
+.tutor-avatar.is-excited .tutor-cheek  { opacity: .7; }
+.tutor-avatar.is-excited .tutor-brow-l { transform: translateY(-4px); }
+.tutor-avatar.is-excited .tutor-brow-r { transform: translateY(-4px); }
+
+.tutor-avatar.is-encouraging .tutor-brow-l { transform: rotate(-7deg) translateY(-2px); }
+.tutor-avatar.is-encouraging .tutor-brow-r { transform: rotate(7deg) translateY(-2px); }
+.tutor-avatar.is-encouraging .tutor-cheek  { opacity: .45; }
+
+.tutor-avatar.is-curious .tutor-brow-l { transform: translateY(-6px) rotate(-10deg); }
+
+.tutor-avatar.is-celebrating .tutor-mouth { stroke-width: 6; }
+.tutor-avatar.is-celebrating .tutor-cheek { opacity: .8; }
+.tutor-avatar.is-celebrating .tutor-halo  { fill: rgba(255, 207, 61, .4); r: 66; }
+.tutor-avatar.is-celebrating .tutor-tuft  { animation: tutorPop .6s ease; }
+@keyframes tutorPop {
+  0%   { transform: scale(1) rotate(0); }
+  45%  { transform: scale(1.22) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+/* gentle correction: soft, patient, never disappointed */
+.tutor-avatar.is-gentle_correction .tutor-brow-l { transform: rotate(8deg) translateY(2px); }
+.tutor-avatar.is-gentle_correction .tutor-brow-r { transform: rotate(-8deg) translateY(2px); }
+.tutor-avatar.is-gentle_correction .tutor-cheek  { opacity: .4; }
+
+.tutor-avatar.is-thinking .tutor-pupil  { transform: translate(4px, -3px); }
+.tutor-avatar.is-thinking .tutor-brow-r { transform: translateY(-5px); }
+
+.tutor-avatar.is-listening .tutor-halo  { r: 64; }
+
+/* speaking: the mouth opens and closes while audio plays.
+   Driven by transform rather than the CSS `d` property, which Firefox does
+   not support — the shape itself is set from js/tutor/avatar.js. */
+.tutor-avatar.is-speaking .tutor-mouth {
+  animation: tutorTalk .28s ease-in-out infinite;
+  transform-origin: 80px 102px;
+}
+@keyframes tutorTalk {
+  0%, 100% { transform: scaleY(1); }
+  50%      { transform: scaleY(2.1); }
+}
+
+/* --- the lesson surface ------------------------------------ */
+.tutor-card { margin-bottom: 12px; }
+.tutor-sub { margin: 14px 0 6px; font-size: 1em; }
+.tutor-lesson-text { font-size: 1.05em; line-height: 1.5; }
+.tutor-passage {
+  background: var(--panel-2); border-radius: var(--radius-sm);
+  padding: 12px 14px; line-height: 1.55; color: var(--ink);
+}
+.tutor-question { font-weight: 800; font-size: 1.1em; margin: 10px 0; }
+.tutor-answer { line-height: 1.55; }
+.tutor-progress { margin: 0 0 6px; letter-spacing: .02em; }
+.tutor-input { margin-top: 6px; }
+.tutor-feedback { font-weight: 800; margin: 4px 0 8px; }
+.tutor-feedback.good { color: var(--good); }
+.tutor-reward {
+  display: inline-block; background: var(--good-bg); color: var(--good);
+  border-radius: var(--radius-sm); padding: 8px 14px; font-weight: 800;
+}
+.tutor-demo-note { text-align: center; margin-top: 10px; }
+
+/* --- grade and language pickers (grown-ups) ---------------- */
+.tutor-grades, .tutor-langs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tutor-grade {
+  min-width: 56px; min-height: 48px; justify-content: center;
+  font-weight: 800; cursor: pointer;
+  border: 2px solid var(--line); background: var(--panel-2); color: var(--ink-soft);
+}
+.tutor-grade.is-on, .tutor-lang.is-on {
+  background: var(--grape); color: #fff; border-color: var(--grape);
+}
+.tutor-lang {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  min-height: 56px; padding: 8px 12px; cursor: pointer;
+  border: 2px solid var(--line); background: var(--panel-2); color: var(--ink-soft);
+}
+.tutor-lang-name { font-weight: 800; }
+/* Capability is a WORD, never only a colour. */
+.tutor-lang-state { opacity: .8; font-size: .78em; text-transform: uppercase; letter-spacing: .04em; }
+.tutor-lang.is-unready { border-style: dashed; opacity: .75; }
+.tutor-lang-note { margin-top: 8px; min-height: 1.2em; }
+.tutor-lang-note.bad { color: var(--nudge); font-weight: 700; }
+
+.tutor-path { list-style: none; margin: 10px 0 0; padding: 0; }
+.tutor-path li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 0; border-bottom: 1px solid var(--line);
+}
+.tutor-path li:last-child { border-bottom: 0; }
+.tutor-path-emoji { font-size: 1.3em; }
+
+.tutor-ask .tutor-ask-input { margin-bottom: 8px; }
+
+/* --- the way in, on the map -------------------------------- */
+.map-tutor { display: flex; justify-content: center; margin-top: 10px; }
+.tutor-entry {
+  display: flex; align-items: center; gap: 12px;
+  min-height: var(--tap); padding: 10px 18px 10px 12px;
+  border-radius: var(--radius); border: 2px solid rgba(255, 255, 255, .22);
+  background: rgba(255, 255, 255, .1); color: #fff;
+  font-family: var(--font); font-size: 1em; cursor: pointer;
+  backdrop-filter: blur(3px);
+}
+.tutor-entry:hover { background: rgba(255, 255, 255, .16); }
+.tutor-entry-orb {
+  width: 42px; height: 42px; flex: 0 0 auto;
+  display: grid; place-items: center; font-size: 22px;
+  border-radius: 50%; background: linear-gradient(160deg, #ffe9a8, #ffc93c);
+}
+.tutor-entry-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+.tutor-entry-text small { opacity: .85; font-size: .82em; }
+.tutor-entry.is-plus { border-color: var(--gold); }
+
+/* --- reduced motion ----------------------------------------
+   Movement stops; expressions do not. A child who asked for less
+   motion has not asked to lose the difference between "well done"
+   and "let's try that again". */
+@media (prefers-reduced-motion: reduce) {
+  .tutor-avatar .tutor-head,
+  .tutor-avatar .tutor-tuft,
+  .tutor-avatar.is-speaking .tutor-mouth,
+  .tutor-avatar.is-celebrating .tutor-tuft { animation: none !important; }
+  .tutor-mouth, .tutor-brow, .tutor-pupil, .tutor-eye, .tutor-halo, .tutor-cheek {
+    transition: none !important;
+  }
+}
+body.reduce-motion .tutor-avatar .tutor-head,
+body.reduce-motion .tutor-avatar .tutor-tuft,
+body.reduce-motion .tutor-avatar.is-speaking .tutor-mouth,
+body.reduce-motion .tutor-avatar.is-celebrating .tutor-tuft { animation: none !important; }
+body.reduce-motion .tutor-mouth,
+body.reduce-motion .tutor-brow,
+body.reduce-motion .tutor-pupil,
+body.reduce-motion .tutor-eye,
+body.reduce-motion .tutor-halo,
+body.reduce-motion .tutor-cheek { transition: none !important; }
+
+/* --- tablet / landscape ------------------------------------ */
+@media (min-width: 560px) {
+  .tutor-stage { flex-direction: row; align-items: center; gap: 18px; }
+  .tutor-art { width: 150px; flex: 0 0 auto; }
+  .tutor-bubble { text-align: left; flex: 1 1 auto; }
+  .tutor-bubble::after { top: 50%; left: -9px; transform: translateY(-50%) rotate(45deg); }
+}
+
+/* A sideways phone has 390pt of height: shrink the character so the
+   question and the answer field still fit without scrolling. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .tutor-art { width: 108px; }
+  .tutor-bubble { padding: 10px 14px; }
+  .tutor-lesson-text { font-size: 1em; }
+  .tutor-grade { min-height: 44px; }
+  .tutor-lang { min-height: 48px; }
+}

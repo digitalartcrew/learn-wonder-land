@@ -28,8 +28,12 @@
        `contentId` is a world id or slug. */
     childPrompt: function (contentId) {
       var world = WW.Content.world(contentId);
-      var name = world ? world.name : 'This adventure';
-      var emoji = (world && world.emoji) || '✨';
+      /* Not every premium thing is a world — WonderTutor is a feature — so
+         fall back to the feature's own name rather than calling it an
+         "adventure" the child cannot find on the map. */
+      var feature = world ? null : WW.Content.feature(contentId);
+      var name = world ? world.name : (feature ? feature.name : 'This adventure');
+      var emoji = (world && world.emoji) || (feature ? '✨' : '✨');
 
       if (WW.events) {
         WW.events.track('premium_prompt_shown', { contentId: contentId, world: world ? world.id : null });

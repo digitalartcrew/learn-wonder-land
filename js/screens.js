@@ -282,6 +282,7 @@
             : '<b>Quest:</b> ' + found + ' crystal' + (found === 1 ? '' : 's') + ' home, ' +
               left + ' to go!');
 
+      this.renderTutorEntry();
       this.drawPaths();
       WW.Buddy.show(true);
       if (!this._greeted) {
@@ -290,6 +291,46 @@
           WW.Buddy.say('Pick a world, ' + S.name() + '!');
         }, 700);
       }
+    },
+
+    /* WonderTutor's entry point on the map.
+
+       It is always visible, including for a free Explorer, because the demo
+       (assessment plus a first lesson) is the whole point — a grown-up cannot
+       judge a tutor they have never seen. The label says what it IS, never
+       what it costs, and the premium state is a word as well as a sparkle. */
+    renderTutorEntry: function () {
+      var host = document.getElementById('map-tutor');
+      if (!host || !WW.tutor) return;
+      host.innerHTML = '';
+
+      var access = WW.tutor.access();
+      var ready = WW.tutor.isReady();
+      var locked = !access.allowed && access.blockedBy === 'plus';
+
+      var sub;
+      if (locked) sub = '✨ Part of WonderWorld+';
+      else if (!ready) sub = 'Let\'s get started!';
+      else sub = 'Ready when you are';
+
+      var btn = U.el('button', {
+        class: 'tutor-entry' + (locked ? ' is-plus' : ''),
+        id: 'map-tutor-btn',
+        'aria-label': 'WonderTutor. ' + (locked
+          ? 'Part of WonderWorld plus. Ask a grown-up.'
+          : 'Your learning guide. ' + sub),
+        onclick: function () {
+          Sound.play('tap');
+          Nav.go('tutor');
+        }
+      }, [
+        U.el('span', { class: 'tutor-entry-orb', text: '✨', 'aria-hidden': 'true' }),
+        U.el('span', { class: 'tutor-entry-text' }, [
+          U.el('b', { text: 'WonderTutor' }),
+          U.el('small', { text: sub })
+        ])
+      ]);
+      host.appendChild(btn);
     },
 
     tap: function (w) {
@@ -554,6 +595,7 @@
       body.appendChild(this.deepDiveCard());
       body.appendChild(this.practiceCard());
       body.appendChild(this.recentCard());
+      body.appendChild(this.tutorCard());
       body.appendChild(this.badgesCard());
       body.appendChild(this.teachesCard());
 
@@ -825,6 +867,118 @@
         ]));
       });
       card.appendChild(list);
+      return card;
+    },
+
+    /* ---------------------------------------------------------
+       WONDERTUTOR REPORT
+
+       Educational summaries only. Deliberately NOT a chat
+       transcript: a parent gets to know what their child is
+       working on and how it is going, which is what a report is
+       for, without the tutor becoming a surveillance device
+       pointed at a six-year-old's questions.
+
+       Every statement here is about a SKILL. Nothing in this card
+       describes, rates or diagnoses the child.
+       --------------------------------------------------------- */
+    tutorCard: function () {
+      var P2 = WW.learningProfile, T2 = WW.tutorTaxonomy;
+      if (!P2 || !T2) return U.el('div');
+
+      var card = UI.card('', [U.el('h3', { text: '✨ WonderTutor' })]);
+      var grade = P2.grade();
+
+      if (grade === null) {
+        card.appendChild(U.el('p', { class: 'muted', text:
+          'Not set up yet. Open WonderTutor from the map and choose a grade ' +
+          'to get started — it takes a moment and we never ask your child ' +
+          'for their age or birth date.' }));
+        return card;
+      }
+
+      var lang = WW.tutorLanguages ? WW.tutorLanguages.get(P2.language()) : null;
+      card.appendChild(U.el('p', { class: 'report-line' }, [
+        U.el('b', { text: 'Grade setting: ' }), T2.gradeLabel(grade)
+      ]));
+      if (lang) {
+        card.appendChild(U.el('p', { class: 'report-line' }, [
+          U.el('b', { text: 'Tutoring language: ' }),
+          lang.name + (lang.humanValidated ? '' : ' (' + lang.state + ')')
+        ]));
+        if (!lang.humanValidated && WW.tutorLanguages.disclosure(lang.code)) {
+          card.appendChild(U.el('p', { class: 'muted small', text:
+            WW.tutorLanguages.disclosure(lang.code) }));
+        }
+      }
+
+      /* Assessment state, under its real name for a grown-up. */
+      var a = P2.data().assessment;
+      card.appendChild(U.el('p', { class: 'report-line' }, [
+        U.el('b', { text: 'Initial Skills Assessment: ' }),
+        a.state === 'complete'
+          ? 'complete (' + a.asked + ' questions)'
+          : (a.state === 'in-progress' ? 'in progress' : 'not started yet')
+      ]));
+
+      if (a.state !== 'complete') {
+        card.appendChild(U.el('p', { class: 'muted small', text:
+          'Skill levels appear here once the first assessment is done.' }));
+        return card;
+      }
+
+      /* Per-domain levels and counts. */
+      var any = false;
+      T2.DOMAINS.forEach(function (d) {
+        var s = P2.domainSummary(d.id);
+        if (s.level === null) return;
+        any = true;
+        var band = T2.band(s.level, grade);
+        var row = U.el('div', { class: 'report-head' }, [
+          U.el('b', { text: d.emoji + ' ' + d.name }),
+          /* The band is spelled out, never conveyed by colour alone. */
+          U.el('small', { text: T2.gradeLabel(s.level) + ' · ' + T2.BAND_LABELS[band] })
+        ]);
+        card.appendChild(row);
+
+        var facts = [];
+        if (s.mastered.length) facts.push(s.mastered.length + ' mastered');
+        if (s.practising.length) facts.push(s.practising.length + ' practising');
+        if (s.review.length) facts.push(s.review.length + ' needing review');
+        card.appendChild(U.el('p', { class: 'muted small report-facts', text:
+          facts.length ? facts.join(' · ') : 'Not practised yet' }));
+
+        if (s.review.length) {
+          card.appendChild(U.el('p', { class: 'muted small', text:
+            'Worth revisiting: ' + s.review.map(function (x) { return x.name; }).join(', ') }));
+        }
+      });
+
+      if (!any) {
+        card.appendChild(U.el('p', { class: 'muted', text:
+          'No skills practised yet.' }));
+      }
+
+      var d2 = P2.data();
+      card.appendChild(U.el('p', { class: 'report-line' }, [
+        U.el('b', { text: 'Tutoring sessions: ' }),
+        String(d2.sessions) + ' · ' + d2.lessonsCompleted + ' lessons completed'
+      ]));
+
+      /* Fair use, stated to the parent rather than counted at the child. */
+      if (WW.tutor && WW.entitlements && WW.entitlements.isPlus()) {
+        var today = WW.tutor._lessonsToday();
+        if (today >= WW.tutor.ACCESS.plusLessonsPerDay * 0.75) {
+          card.appendChild(U.el('p', { class: 'muted small', text:
+            'Lessons today: ' + today + ' of a ' + WW.tutor.ACCESS.plusLessonsPerDay +
+            ' daily fair-use limit. Your child is never shown this number.' }));
+        }
+      }
+
+      card.appendChild(U.el('p', { class: 'muted small', text:
+        'These are skill levels, not an assessment of your child. WonderTutor ' +
+        'does not diagnose learning difficulties or any medical condition.' }));
+
       return card;
     },
 

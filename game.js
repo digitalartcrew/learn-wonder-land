@@ -12,6 +12,7 @@
      js/parentgate.js    the reusable adult check
      js/screens.js       title, creator, map, tree, profile, parent
      js/plus.js          child premium prompt + grown-ups Plus page
+     js/tutor/*.js       WonderTutor: taxonomy, profile, lessons, screen
      js/worlds/*.js      one module per world
      js/devtools.js      development-only tier simulator
      game.js             this file — boots everything
@@ -41,6 +42,11 @@
            notices a cancelled or lapsed subscription at launch. */
     WW.entitlements.load();
     WW.billing.verify();
+
+    /* 1c. Load this Explorer's learning profile. Its own key again, so the
+           game save is untouched by anything the tutor does, and a profile
+           that fails to parse starts fresh rather than half-read. */
+    if (WW.learningProfile) WW.learningProfile.load();
 
     /* 2. Apply accessibility settings before anything paints */
     WW.Settings.apply();
