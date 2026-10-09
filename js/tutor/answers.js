@@ -151,7 +151,7 @@
     friend: 'There is an "i" before the "end": fri-end.',
     said: 'It sounds like "sed" but it is spelled with "ai".',
     people: 'The "eo" is unusual — peo-ple.',
-    before: null, favourite: 'British spelling keeps the "u": fav-our-ite.',
+    before: null, favorite: 'British spelling keeps the "u": fav-our-ite.',
     favorite: 'American spelling drops the "u": fav-or-ite.',
     something: null, different: 'Three syllables: dif-fer-ent. Double "f".',
     science: 'The "sci" makes a /s/ sound.',
@@ -195,7 +195,7 @@
      Child-level, accurate, short. `skill` ties an entry back to the
      taxonomy so the tutor can offer the matching lesson afterwards. */
   var GLOSSARY = {
-    /* --- maths --- */
+    /* --- math --- */
     'add': { skill: 'addition', text: 'Adding means putting groups together to find how many there are altogether.' },
     'addition': { skill: 'addition', text: 'Addition is putting groups together. 3 + 4 = 7.' },
     'subtract': { skill: 'subtraction', text: 'Subtracting means taking some away and finding how many are left.' },
@@ -248,7 +248,7 @@
     'planet': { skill: 'earth-space', text: 'A planet is a large world that travels around a star. Earth is a planet going around the Sun.' },
     'star': { skill: 'earth-space', text: 'A star is a huge ball of burning gas that makes its own light. The Sun is our closest star.' },
     'moon': { skill: 'earth-space', text: 'A moon is a world that travels around a planet. Our Moon goes around the Earth.' },
-    'sun': { skill: 'earth-space', text: 'The Sun is the star at the centre of our solar system. It gives Earth light and heat.' },
+    'sun': { skill: 'earth-space', text: 'The Sun is the star at the center of our solar system. It gives Earth light and heat.' },
     'gravity': { skill: 'forces', text: 'Gravity is the pull that brings things down to the ground. It is why a dropped ball falls.' },
     'orbit': { skill: 'earth-space', text: 'An orbit is the curved path something takes as it travels around something bigger.' },
     'solar system': { skill: 'earth-space', text: 'The solar system is the Sun and everything that orbits it, including all the planets.' },
@@ -309,7 +309,7 @@
     { keys: ['plant', 'water'], skill: 'plants',
       text: 'Plants drink water through their roots. They need it to make food in their leaves, and it also keeps their stems firm so they can stand up.' },
     { keys: ['sky', 'blue'], skill: 'earth-space',
-      text: 'Sunlight is made of lots of colours mixed together. When it hits the air, the blue light bounces around the most, so that is the colour we see all over the sky.' },
+      text: 'Sunlight is made of lots of colors mixed together. When it hits the air, the blue light bounces around the most, so that is the color we see all over the sky.' },
     { keys: ['day', 'night'], skill: 'earth-space',
       text: 'Earth spins all the way round about once every 24 hours. When your side faces the Sun it is day, and when it faces away it is night.' },
     { keys: ['season'], skill: 'earth-space',
@@ -317,7 +317,7 @@
     { keys: ['rain'], skill: 'weather',
       text: 'The Sun warms water in seas and puddles until it turns into invisible vapour and rises. Up high it cools into tiny droplets that make clouds, and when those droplets join up they get heavy and fall as rain.' },
     { keys: ['rainbow'], skill: 'weather',
-      text: 'Raindrops bend sunlight and split it into all its colours. That is why you see a rainbow when the Sun shines while it is still raining.' },
+      text: 'Raindrops bend sunlight and split it into all its colors. That is why you see a rainbow when the Sun shines while it is still raining.' },
     { keys: ['thing', 'fall'], skill: 'forces',
       text: 'Gravity pulls everything towards the Earth. That is why a dropped ball goes down instead of floating away.' },
     { keys: ['magnet', 'stick'], skill: 'forces',
@@ -415,7 +415,7 @@
         ok: false, kind: 'spelling',
         text: 'I don\'t know how to spell "' + word + '" for certain, so I won\'t guess — ' +
               'a wrong spelling is worse than none! Try a grown-up or a dictionary. ' +
-              'Want to practise some spellings I do know?'
+              'Want to practice some spellings I do know?'
       };
     }
     var letters = hit.split('').join('-');
@@ -512,8 +512,8 @@
         kind: 'unknown',
         text: 'That one\'s outside what I can work out on my own — and I\'d rather ' +
               'say so than guess. ' +
-              (def ? 'Shall we practise ' + def.name.toLowerCase() + ' instead?'
-                   : 'Shall we practise something together instead?')
+              (def ? 'Shall we practice ' + def.name.toLowerCase() + ' instead?'
+                   : 'Shall we practice something together instead?')
       };
     }
   };

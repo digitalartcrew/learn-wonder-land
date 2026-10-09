@@ -131,7 +131,7 @@
 
        The deterministic answer is computed FIRST and is what resolves if the
        network is missing, slow, disabled, or returns something we do not
-       recognise. */
+       recognize. */
     decide: function (ctx) {
       ctx = ctx || {};
       var safe = Emotion.fallback(ctx);

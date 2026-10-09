@@ -93,6 +93,8 @@ Load order is fixed in `index.html` and mirrored in `tools/logic-test.js`:
 | `js/tutor/taxonomy.js` | Domains, skills, grade bands, prerequisites |
 | `js/tutor/profile.js` | `WW.learningProfile` — grade, language, per-skill mastery |
 | `js/tutor/content.js` | The offline lesson and question bank; deterministic scoring |
+| `js/tutor/answers.js` | `WW.tutorAnswers` — offline question answering |
+| `js/tutor/steps.js` | `WW.tutorSteps` — step-by-step walkthroughs |
 | `js/tutor/safety.js` | Outbound allow-list, input screening, output screening |
 | `js/tutor/emotion.js` | `WW.tutorEmotion` — expression allow-list + deterministic rules |
 | `js/tutor/avatar.js` | `WW.tutorAvatar` — the SVG character and its states |
@@ -167,6 +169,24 @@ WW.learningProfile.band('multiplication');   // 'above'
 WW.learningProfile.band('spelling');         // 'approaching'
 ```
 
+### US English and US units
+
+The product is US-targeted — grade levels, dollars, cents, the App Store — so
+the content is US English and US customary units throughout. Tests pin both,
+because this is exactly the sort of thing that drifts back one commit at a time.
+
+Two of these were correctness problems rather than preferences:
+
+- **Measurement taught metric.** "How many centimeters are in 3 meters?" is not
+  what a US elementary classroom teaches. It is now inches, feet and yards,
+  with the walkthroughs matching.
+- **A spelling clue had a different US answer.** "Spell: the season after
+  summer" expects *autumn*; a US child writes *fall* and is marked wrong. The
+  clue is gone.
+
+Also fixed while there: no spelling answer is more than one word, so a child
+typing `thankyou` for `thank you` cannot lose a question to formatting.
+
 ### Pitching it right
 
 A skill's grade range starts at the grade a child is normally **taught** it,
@@ -192,7 +212,7 @@ Six domains, 39 skills, each with a grade range and prerequisites:
 
 | Domain | Skills |
 |---|---|
-| Mathematics | counting, number sense, comparison, addition, subtraction, multiplication, division, fractions, money maths, measurement, geometry, word problems |
+| Mathematics | counting, number sense, comparison, addition, subtraction, multiplication, division, fractions, money math, measurement, geometry, word problems |
 | Reading | phonics, vocabulary, comprehension, main idea, inference |
 | Writing | spelling, sentences, grammar |
 | Science | living things, plants, weather, matter, forces, earth and space |
@@ -298,7 +318,7 @@ consecutive solid sessions and contracts on a miss.
 ## 8. The tutoring loop
 
 ```
-ASSESS → TEACH → PRACTISE → CHECK → ADAPT → REVIEW → ADVANCE
+ASSESS → TEACH → PRACTICE → CHECK → ADAPT → REVIEW → ADVANCE
 ```
 
 `WW.tutorSession` runs one lesson:
@@ -318,6 +338,62 @@ verdict.**
 On a second miss in practice, the level steps down and the tutor asks the
 provider for a *different* explanation (`explain_again`), falling back to the
 bank's worked example.
+
+### "Show me how"
+
+A child who gets something wrong and is told "have another go" has been given
+encouragement but no help — if they did not know how the first time, they still
+do not. So a missed **practice** question offers a walkthrough.
+
+`WW.tutorSteps.build(question)` returns the steps a teacher would say out loud,
+derived from the question's own numbers:
+
+```
+What is 56 + 82?
+  1. Big numbers are easier in pieces. 56 is 50 and 6. 82 is 80 and 2.
+  2. Add the tens first: 50 + 80 = 130.
+  3. Then add the ones: 6 + 2 = 8.
+  4. Put the two parts together: 130 + 8 = 138.
+  5. So 56 + 82 = 138.
+```
+
+| Skill | Method taught |
+|---|---|
+| Addition | count on (small) / partition into tens and ones (large) |
+| Subtraction | count back (small) / take away in pieces (large) |
+| Multiplication | repeated addition, then counting up in groups |
+| Division | "how many Ns fit into M?", counting up |
+| Fractions | share into equal groups / same denominator, add the tops |
+| Comparison | compare the tens, then the ones |
+| Counting | find the jump, then add it |
+| Number sense | count in tens or hundreds |
+| Measurement | start from the unit you know |
+| Geometry | trace the outline and count the edges, not the corners |
+| Word problems | find the numbers, then find the words that say which operation |
+| Spelling | say it slowly, write the sounds, then the whole word |
+| Any multiple choice | elimination, and look back at the passage |
+
+**Properties that are enforced, not hoped for:**
+
+- **The answer is the last step**, so a child who taps straight through has at
+  least passed the method on the way to it.
+- **Revealed one at a time** (`Next step →`), with `Show me all the steps` for
+  a child in a hurry. Each step is read aloud — this is the one place extra
+  speech clearly earns itself.
+- **A method that does not reach the real answer is discarded.** The final step
+  is checked against `question.answer`, and the whole walkthrough is thrown
+  away if they disagree. A confidently wrong method is worse than none.
+- **Afterwards they get a FRESH question** at the same level. Being walked
+  through one problem is not the same as having solved it, and it should not end
+  the practice either.
+- **Coverage is 100%** of the generated bank, verified by test — there is no
+  question where the button appears and leads nowhere, because it is only
+  rendered when `build()` returns something.
+
+**Not offered during the CHECK phase.** The check is the evidence, and help
+there would undermine what it measures. `Session.answer()` carries the missed
+`question` on practice results and deliberately omits it on check results, so
+the UI *cannot* offer the button at the wrong moment. There is a test for that.
 
 ### Never shame
 
@@ -342,7 +418,7 @@ The tutoring screen offers real options rather than one button:
 |---|---|
 | **Let's learn _&lt;skill&gt;_** | `WW.tutor.nextSkill()`, named — not a mystery box — with its reason underneath |
 | **Choose a subject** | Six domains → the skills inside, each showing where the child is up to |
-| **Practise something tricky** | `Profile.weakest()`. Only shown when there genuinely is one |
+| **Practice something tricky** | `Profile.weakest()`. Only shown when there genuinely is one |
 | **Surprise me** | A random skill at their level |
 
 An earlier version asked "What would you like to do?" and offered exactly one
@@ -383,7 +459,7 @@ It returns a reason, so the tutor can say something true about its own choice �
 |---|---|
 | `prereq` | "Before we tackle division, let's make multiplication really solid. It makes the next bit much easier." |
 | `review` | "Let's go back over fractions for a moment — a quick refresh makes it stick." |
-| `practice` | "I found something we can practise! Let's work on fractions together." |
+| `practice` | "I found something we can practice! Let's work on fractions together." |
 | `new` | "Today we're going to learn about multiplication!" |
 | `advance` | "You're doing really well at addition — ready for a trickier one?" |
 
@@ -450,7 +526,7 @@ state is dropped and the previous face stays.
 | `skill_mastered` / `assessment_completed` | `celebrating` |
 | `lesson_completed` | `celebrating` if mastered, else `encouraging` |
 | `processing` | `thinking` |
-| anything unrecognised | `neutral` |
+| anything unrecognized | `neutral` |
 
 ### The Decisions API
 
@@ -932,7 +1008,7 @@ and nothing in the app may claim accuracy beyond it:
 
 All twelve appear in the picker, including the ones that are not ready, because
 hiding them would hide the reason they are not ready. The state is rendered as a
-**word** (`ready` / `beta` / `needs validation`), never as colour alone.
+**word** (`ready` / `beta` / `needs validation`), never as color alone.
 
 `canTeachIn()` returns false for experimental languages; selecting one shows the
 disclosure and does not change the teaching language. `coerce()` falls back to
@@ -959,7 +1035,7 @@ Before either can move to `beta` or `supported`:
 - [ ] A native speaker reviews generated tutoring output at each grade level
 - [ ] The endonym is confirmed (Kosraean's is currently `null` by design)
 - [ ] Number words, counting and arithmetic phrasing are checked — these are
-      where translation most often goes wrong in a maths lesson
+      where translation most often goes wrong in a math lesson
 - [ ] Orthography and diacritics are confirmed (ʻokina and kahakō for Hawaiian)
 - [ ] Someone decides whether a language with no on-device TTS voice should
       offer voice at all
@@ -1068,7 +1144,7 @@ Added to the existing Grown-Ups dashboard, behind the existing gate.
   disclosure
 - **Initial Skills Assessment** state and question count
 - Per domain: estimated level, band in words, counts of skills mastered /
-  practising / needing review, and which ones are worth revisiting
+  practicing / needing review, and which ones are worth revisiting
 - Sessions and lessons completed
 - Fair-use count, once above 75% of the ceiling, with a note that the child is
   not shown it
@@ -1159,8 +1235,8 @@ WW.learningProfile.data().usage    // aiCalls, tokens, decisionCalls, fallbacks
 ## 24. Tests
 
 ```bash
-node tools/logic-test.js                            # 350 assertions
-node tools/browser-test.js http://localhost:8111    # 341 assertions
+node tools/logic-test.js                            # 437 assertions
+node tools/browser-test.js http://localhost:8111    # 374 assertions
 ```
 
 > If the browser run fails with *"Executable doesn't exist"*, the pinned

@@ -588,7 +588,7 @@ memory only — a reload closes every gate.
 One labelled numeric field (`inputmode="numeric"`, `aria-label` carrying the sum
 spoken in words), the instruction wired up with `aria-describedby`, errors
 announced through `role="status"`, a visible focus ring, and a way out that does
-not require solving anything. Nothing depends on colour or hover.
+not require solving anything. Nothing depends on color or hover.
 
 > **Tight on a sideways phone.** At 844×390 the gate card is ~569pt of content in
 > a ~335pt window, so a grown-up scrolls. The instruction and the answer field do
@@ -645,7 +645,7 @@ Only on a pass does `Nav.go('plus')` run.
 ### On the map
 
 A Plus world is labelled by name — *"Part of WonderWorld+"* — never by price,
-and the label is text as well as colour. The map shows its learning requirement
+and the label is text as well as color. The map shows its learning requirement
 the same way as every other world, because that is what the child is working
 towards.
 

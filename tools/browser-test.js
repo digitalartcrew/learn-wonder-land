@@ -447,7 +447,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await tapText('Open the stand!');
   await sleep(600);
   await clearModals();
-  ok('day results shown with the maths written out', await page.locator('.calc-row.profit, .calc-row.loss').count() === 1);
+  ok('day results shown with the math written out', await page.locator('.calc-row.profit, .calc-row.loss').count() === 1);
   const biz = await page.evaluate(() => ({
     day: WW.State.data.worlds.business.day,
     cash: WW.State.data.worlds.business.cash,
@@ -624,7 +624,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('a Plus world is marked with a sparkle, not a padlock',
     await page.locator('.map-node[data-world="space"].premium').count() === 1 &&
     await page.locator('.map-node[data-world="space"].locked').count() === 0);
-  ok('the premium mark is a label as well as a colour',
+  ok('the premium mark is a label as well as a color',
     (await page.locator('.map-node[data-world="space"] .node-label small').textContent())
       .includes('WonderWorld+'));
   ok('the map node still announces itself to a screen reader',
@@ -712,7 +712,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   ok('the annual plan is the recommended one',
     await page.locator('.plan-card.recommended').count() === 1);
-  ok('it is recommended by a text badge, not only by colour',
+  ok('it is recommended by a text badge, not only by color',
     (await page.locator('.plan-badge').textContent()) === 'BEST VALUE');
   ok('both purchase buttons are present',
     await page.locator('button:has-text("Start 7-Day Free Trial")').count() === 1 &&
@@ -857,7 +857,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(400);
   await passAdultGate();
   const freeDash = (await page.locator('#parent-body').textContent()).replace(/\s+/g, ' ');
-  ok('the dashboard is organised into sections',
+  ok('the dashboard is organized into sections',
     await page.locator('.parent-section').count() >= 3);
   ok('learning progress is still reported', /Learning time/.test(freeDash) &&
     /Subject progress/.test(freeDash) && /Ideas for practice/.test(freeDash));
@@ -1107,7 +1107,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('all 12 tutoring languages appear',
     await tp.locator('.tutor-lang').count() === 12,
     String(await tp.locator('.tutor-lang').count()));
-  ok('capability is shown as a word, not only a colour',
+  ok('capability is shown as a word, not only a color',
     (await tp.locator('.tutor-lang .tutor-lang-state').allTextContents())
       .filter((t) => /ready|beta|needs validation/.test(t)).length === 12);
   ok('Kosraean and Hawaiian are visibly not ready',
@@ -1239,6 +1239,47 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('a wrong answer is NEVER met with shaming language',
     !/wrong again|that's easy|you should know|incorrect|failed/i.test(wrongFeedback),
     wrongFeedback.slice(0, 140));
+
+  /* --- "Show me how": the method, step by step --- */
+  ok('a missed question offers help, not just encouragement',
+    await tp.locator('.tutor-help-btn').count() === 1,
+    (await tp.locator('#tutor-activity').textContent()).slice(0, 120));
+
+  await tp.locator('.tutor-help-btn').click();
+  await sleep(600);
+  ok('the walkthrough opens', /Let's do it together/i.test(
+    await tp.locator('#tutor-activity').textContent()));
+  ok('it shows the question being worked on',
+    await tp.locator('#tutor-activity .tutor-question').count() === 1);
+  ok('it starts on step one, not an empty list',
+    await tp.locator('.tutor-step').count() === 1);
+  ok('and says which step you are on',
+    /Step 1 of \d/.test(await tp.locator('.tutor-progress').textContent()));
+
+  /* Tap through the whole method. */
+  let revealed = 1, guard = 0;
+  while (guard++ < 12 && await tp.locator('button:has-text("Next step")').count()) {
+    await tp.locator('button:has-text("Next step")').click();
+    await sleep(220);
+    revealed = await tp.locator('.tutor-step').count();
+  }
+  ok('steps are revealed one at a time', revealed >= 3, String(revealed));
+  ok('the final step gives the answer', await tp.evaluate(() => {
+    const steps = Array.from(document.querySelectorAll('.tutor-step'));
+    return steps.length > 0 && /=|answer|has \d+ sides|is bigger/i.test(
+      steps[steps.length - 1].textContent);
+  }));
+  ok('and the walkthrough offers a fresh question, not the same one again',
+    await tp.locator('button:has-text("Let me try another one")').count() === 1);
+  await fullShot(tp, '46-tutor-show-me-how.png');
+
+  await tp.locator('button:has-text("Let me try another one")').click();
+  await sleep(700);
+  ok('tapping it returns the child to practice',
+    /Practice \d of \d|Check \d of \d/.test(
+      await tp.locator('#tutor-activity').textContent()),
+    (await tp.locator('#tutor-activity').textContent()).slice(0, 120));
+
   await tp.screenshot({ path: path.join(SHOTS, '38-tutor-encouragement.png') });
 
   /* --- changing the grade after setup --- */
@@ -1385,7 +1426,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await tp.evaluate(() => WW.tutorVoiceChat.listening === false));
   ok('and no session is open until the child acts',
     await tp.evaluate(() => WW.tutorVoiceChat.isOpen() === false));
-  ok('the live indicator is a word as well as a colour',
+  ok('the live indicator is a word as well as a color',
     /hold the button to talk/i.test(await tp.locator('.tutor-talk-status').textContent()));
   ok('the talk button keeps a 44pt target', await tp.evaluate(() => {
     const r = document.getElementById('tutor-talk-btn').getBoundingClientRect();
@@ -1554,7 +1595,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('a grown-up sees the real name for the assessment',
     /Initial Skills Assessment/.test(tutorParentTxt));
   ok('the grade setting is shown to the parent', /Grade setting/.test(tutorParentTxt));
-  ok('per-subject levels are reported in words, not only colour',
+  ok('per-subject levels are reported in words, not only color',
     /(on|above|below|approaching) grade level/.test(tutorParentTxt), tutorParentTxt.slice(0, 200));
   ok('the report states it is not a diagnosis',
     /does not diagnose/i.test(tutorParentTxt));
@@ -1613,7 +1654,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       () => document.documentElement.scrollWidth > window.innerWidth + 1);
 
     ok(label + ': the map still lays out', await pg.locator('.map-node').count() === 7);
-    ok(label + ': WonderSpace is marked by name, not only by colour',
+    ok(label + ': WonderSpace is marked by name, not only by color',
       ((await pg.locator('.map-node[data-world="space"] .node-label small')
         .textContent()) || '').includes('WonderWorld+'));
 

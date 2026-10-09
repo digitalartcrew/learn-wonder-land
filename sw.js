@@ -24,7 +24,7 @@
    BUMP `VERSION` on every deploy. Old caches are deleted on
    activate, which is what makes updates reliable.
    ============================================================= */
-const VERSION = 'ww-v8';
+const VERSION = 'ww-v10';
 
 /* Canonical URLs only — no .html suffixes that Pages would redirect. */
 const SHELL = [
@@ -55,6 +55,7 @@ const SHELL = [
   'js/tutor/profile.js',
   'js/tutor/content.js',
   'js/tutor/answers.js',
+  'js/tutor/steps.js',
   'js/tutor/safety.js',
   'js/tutor/emotion.js',
   'js/tutor/avatar.js',

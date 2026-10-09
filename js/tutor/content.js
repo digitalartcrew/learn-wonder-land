@@ -6,7 +6,7 @@
    ----------------------
    WonderTutor must work on a plane. The game is offline-first and
    the tutor does not get to be the thing that breaks that, so every
-   core teaching loop — explain, practise, check, score — runs here,
+   core teaching loop — explain, practice, check, score — runs here,
    in ordinary JavaScript, with no network and no model.
 
    The AI provider is an ENHANCEMENT layered on top: better
@@ -17,7 +17,7 @@
    WHERE THE AI IS ACTUALLY WORTH IT
    ---------------------------------
    Arithmetic questions generate perfectly well from a few lines of
-   code, and scoring `7 × 6` does not need a language model. So maths
+   code, and scoring `7 × 6` does not need a language model. So math
    and money are fully generative here. Comprehension and inference
    need prose, which is where a model genuinely earns its cost, so
    those carry a smaller hand-written bank and are marked
@@ -205,19 +205,28 @@
         cents(a) + ' + ' + cents(b) + ' = ' + cents(a + b) + '.');
     },
 
+    /* US customary units. Elementary schools here teach inches, feet and
+       yards long before metric, so a child measuring a pencil in centimeters
+       is being taught something their classroom is not. */
     measurement: function (level) {
       if (level <= 2) {
-        var cm = rnd(2, 40);
+        var inches = rnd(5, 9);
         return choiceQ('measurement', level,
-          'Would you measure a pencil in centimetres or kilometres?',
-          'centimetres', ['kilometres'],
-          'A pencil is small, so centimetres fit. Kilometres measure long journeys. ' +
-          'A pencil might be about ' + cm + ' cm.');
+          'Would you measure a pencil in inches or miles?',
+          'inches', ['miles'],
+          'A pencil is small, so inches fit. Miles measure long journeys. ' +
+          'A pencil is usually about ' + inches + ' inches long.');
       }
-      var m = rnd(2, 9);
+      if (level === 3) {
+        var ft = rnd(2, 5);
+        return numberQ('measurement', level,
+          'How many inches are in ' + ft + ' feet?', ft * 12,
+          'One foot is 12 inches, so ' + ft + ' × 12 = ' + (ft * 12) + '.');
+      }
+      var yd = rnd(2, 9);
       return numberQ('measurement', level,
-        'How many centimetres are in ' + m + ' metres?', m * 100,
-        'One metre is 100 cm, so ' + m + ' × 100 = ' + (m * 100) + '.');
+        'How many feet are in ' + yd + ' yards?', yd * 3,
+        'One yard is 3 feet, so ' + yd + ' × 3 = ' + (yd * 3) + '.');
     },
 
     geometry: function (level) {
@@ -370,17 +379,19 @@
           { q: 'Spell: the opposite of night.', a: 'day', e: 'd-a-y.' },
           { q: 'Spell: it shines in the sky in the daytime.', a: 'sun', e: 's-u-n.' },
           { q: 'Spell: a pet that barks.', a: 'dog', e: 'd-o-g.' },
-          { q: 'Spell: the colour of a strawberry.', a: 'red', e: 'r-e-d.' }],
+          { q: 'Spell: the color of a strawberry.', a: 'red', e: 'r-e-d.' }],
       2: [{ q: 'Spell: something you read with pages and a cover.', a: 'book', e: 'b-o-o-k.' },
           { q: 'Spell: you use it to write.', a: 'pen', e: 'p-e-n.' },
           { q: 'Spell: the opposite of cold.', a: 'hot', e: 'h-o-t.' },
           { q: 'Spell: where you live with your family.', a: 'home', e: 'h-o-m-e.' }],
-      3: [{ q: 'Spell: a large grey animal with a trunk.', a: 'elephant',
+      3: [{ q: 'Spell: a large gray animal with a trunk.', a: 'elephant',
             e: 'e-l-e-p-h-a-n-t. The "ph" makes an /f/ sound.' },
-          { q: 'Spell: the season after summer.', a: 'autumn',
-            e: 'a-u-t-u-m-n. The n at the end is silent.' },
-          { q: 'Spell: a person you like and play with.', a: 'friend',
-            e: 'f-r-i-e-n-d. There is an "i" before the "end".' }],
+          { q: 'Spell: a person you know well and like spending time with.', a: 'friend',
+            e: 'f-r-i-e-n-d. There is an "i" before the "end".' },
+          { q: 'Spell: the day before today.', a: 'yesterday',
+            e: 'y-e-s-t-e-r-d-a-y. Three parts: yes-ter-day.' },
+          { q: 'Spell: what you drink when you are thirsty.', a: 'water',
+            e: 'w-a-t-e-r. Two parts: wa-ter.' }],
       4: [{ q: 'Spell: a word meaning "happening every year".', a: 'annual',
             e: 'a-n-n-u-a-l — double n.' },
           { q: 'Spell: the study of living things.', a: 'biology', e: 'b-i-o-l-o-g-y.' }]

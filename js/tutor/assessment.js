@@ -314,7 +314,7 @@
           level: s.level,
           band: s.level === null ? null : T.band(s.level, grade),
           mastered: s.mastered.length,
-          practising: s.practising.length,
+          practicing: s.practicing.length,
           review: s.review.length
         };
       }).filter(function (r) { return r.level !== null; });

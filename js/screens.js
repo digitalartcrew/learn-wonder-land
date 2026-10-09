@@ -89,13 +89,13 @@
         }));
       });
 
-      /* ---- hair colours ---- */
+      /* ---- hair colors ---- */
       var hcBox = document.getElementById('opt-haircolor');
       hcBox.innerHTML = '';
       D.hairColors.forEach(function (c, i) {
         hcBox.appendChild(U.el('button', {
           class: 'swatch' + (self.draft.hairColor === i ? ' sel' : ''),
-          'aria-label': 'Hair colour ' + (i + 1), 'aria-pressed': self.draft.hairColor === i ? 'true' : 'false',
+          'aria-label': 'Hair color ' + (i + 1), 'aria-pressed': self.draft.hairColor === i ? 'true' : 'false',
           style: 'background:' + c,
           onclick: function () { self.draft.hairColor = i; Sound.play('tap'); self.enterRefresh(); }
         }, [U.el('span', { class: 'swatch-check', text: '✓', 'aria-hidden': 'true' })]));
@@ -505,7 +505,7 @@
       head.appendChild(av);
       head.appendChild(U.el('div', { class: 'profile-meta' }, [
         U.el('h3', { text: S.name() }),
-        U.el('p', { class: 'muted', text: 'Level ' + info.level + ' Explorer · travelling with ' +
+        U.el('p', { class: 'muted', text: 'Level ' + info.level + ' Explorer · traveling with ' +
           S.companion().name + ' ' + S.companion().emoji }),
         UI.meter('XP to level ' + (info.level + 1), info.into, info.need, '#ffd34d', '⭐'),
         U.el('div', { class: 'stat-row' }, [
@@ -714,7 +714,7 @@
           ]),
           U.el('p', { class: 'muted', text:
             'A per-subject breakdown — discoveries made in the Science Lab, chapters read, ' +
-            'words spelled, days traded, strengths and what to practise — plus a longer ' +
+            'words spelled, days traded, strengths and what to practice — plus a longer ' +
             'history of what your child has done.' }),
           U.el('p', { class: 'chip-soft chip plan-tag', text: 'Part of WonderWorld+' })
         ]);
@@ -963,17 +963,17 @@
         var band = T2.band(s.level, grade);
         var row = U.el('div', { class: 'report-head' }, [
           U.el('b', { text: d.emoji + ' ' + d.name }),
-          /* The band is spelled out, never conveyed by colour alone. */
+          /* The band is spelled out, never conveyed by color alone. */
           U.el('small', { text: T2.gradeLabel(s.level) + ' · ' + T2.BAND_LABELS[band] })
         ]);
         card.appendChild(row);
 
         var facts = [];
         if (s.mastered.length) facts.push(s.mastered.length + ' mastered');
-        if (s.practising.length) facts.push(s.practising.length + ' practising');
+        if (s.practicing.length) facts.push(s.practicing.length + ' practicing');
         if (s.review.length) facts.push(s.review.length + ' needing review');
         card.appendChild(U.el('p', { class: 'muted small report-facts', text:
-          facts.length ? facts.join(' · ') : 'Not practised yet' }));
+          facts.length ? facts.join(' · ') : 'Not practiced yet' }));
 
         if (s.review.length) {
           card.appendChild(U.el('p', { class: 'muted small', text:
@@ -983,7 +983,7 @@
 
       if (!any) {
         card.appendChild(U.el('p', { class: 'muted', text:
-          'No skills practised yet.' }));
+          'No skills practiced yet.' }));
       }
 
       var d2 = P2.data();

@@ -43,7 +43,7 @@ vm.createContext(sandbox);
  /* WonderTutor. Loaded in the same dependency order as index.html. The
     screen is omitted: it is pure DOM and the stubs here have no layout. */
  'js/tutor/languages.js', 'js/tutor/taxonomy.js', 'js/tutor/profile.js',
- 'js/tutor/content.js', 'js/tutor/answers.js',
+ 'js/tutor/content.js', 'js/tutor/answers.js', 'js/tutor/steps.js',
  'js/tutor/safety.js', 'js/tutor/emotion.js',
  'js/tutor/avatar.js', 'js/tutor/voice.js', 'js/tutor/realtime.js',
  'js/tutor/provider.js',
@@ -118,7 +118,7 @@ WW.Progress.addWorldProgress('math', 60);
 ok('progress clamps at 100', WW.State.world('math').progress === 100);
 ok('crystal restored at 100%', WW.State.data.crystals.math);
 
-/* ============ 4. maths question generator ============ */
+/* ============ 4. math question generator ============ */
 section('4. Math Island question generator');
 const M = WW.Worlds.math;
 let bad = [];
@@ -326,7 +326,7 @@ section('9. Child-safety checks');
    child-safety properties below are enforced across all of it. */
 const TUTOR_FILES = [
   'js/tutor/languages.js', 'js/tutor/taxonomy.js', 'js/tutor/profile.js',
-  'js/tutor/content.js', 'js/tutor/answers.js',
+  'js/tutor/content.js', 'js/tutor/answers.js', 'js/tutor/steps.js',
  'js/tutor/safety.js', 'js/tutor/emotion.js',
   'js/tutor/avatar.js', 'js/tutor/voice.js', 'js/tutor/realtime.js',
  'js/tutor/provider.js',
@@ -840,7 +840,7 @@ ok('every script index.html loads is pre-cached by the service worker',
    an old cache serving the previous script list would leave the tutor broken
    rather than absent. Update both sides together on every release. */
 ok('the service worker VERSION was bumped for this release',
-  /const VERSION = 'ww-v8'/.test(swSrc));
+  /const VERSION = 'ww-v10'/.test(swSrc));
 ok('code is still network-first so HTML and JS cannot drift apart',
   /req\.mode === 'navigate' \|\| CODE\.test/.test(swSrc));
 ok('the signup endpoint is still never cached', /pathname\.includes\('\/api\/'\)/.test(swSrc));
@@ -1011,7 +1011,7 @@ ok('a level is reported against the enrolled grade, as a SKILL statement',
   TT.band(1, 2) === 'approaching' && TT.band(0, 2) === 'below');
 
 freshTutor(2);
-ok('an unpractised skill is not mastered', !TP.isMastered('addition'));
+ok('an unpracticed skill is not mastered', !TP.isMastered('addition'));
 for (let i = 0; i < 8; i++) TP.recordAnswer('addition', true);
 ok('consistent correct answers build mastery', TP.isMastered('addition'),
   String(TP.skill('addition').mastery));
@@ -1085,7 +1085,7 @@ ok('the reason is reported, so the tutor can explain its own choice', (() => {
 section('27. WonderTutor: safety, privacy and the AI boundary');
 const S2 = WW.tutorSafety;
 
-ok('requests for personal information are recognised',
+ok('requests for personal information are recognized',
   S2.asksForPII('What is your full name?') &&
   S2.asksForPII('Where do you live?') &&
   S2.asksForPII('What school do you go to?'));
@@ -1525,7 +1525,7 @@ ok('an unknown question is refused rather than invented', (() => {
 })());
 ok('and a refusal still offers something useful to do', (() => {
   const a = AN.answer('who was Napoleon Bonaparte');
-  return /practise/i.test(a.text);
+  return /practice/i.test(a.text);
 })());
 ok('an empty question does not produce a refusal message', (() => {
   const a = AN.answer('');
@@ -1589,7 +1589,7 @@ ok('the removal is explained where the next person will look',
 ok('the menu offers more than one thing to do', (() => {
   const src = read('js/tutor/screen.js');
   return /Choose a subject/.test(src) && /Surprise me/.test(src) &&
-         /Practise something tricky/.test(src);
+         /Practice something tricky/.test(src);
 })());
 ok('the suggested lesson is named rather than being a mystery box',
   /Let..s learn . \+ \(def/.test(read('js/tutor/screen.js')) ||
@@ -1633,6 +1633,261 @@ ok('every concept answer passes the output safety rules',
   AN.CONCEPTS.every((c) => S2.inspectOutput(c.text).ok));
 ok('no answer asks the child for personal information',
   Object.keys(AN.GLOSSARY).every((k) => !S2.asksForPII(AN.GLOSSARY[k].text)));
+
+section('27b. US English and US units');
+
+const US_FILES = CLIENT_FILES.concat(['index.html', 'privacy.html', 'terms.html']);
+const allSrc = US_FILES.map((f) => { try { return read(f); } catch (e) { return ''; } }).join('\n');
+
+ok('no British -ise/-our/-re spellings anywhere in the client', (() => {
+  const brit = allSrc.match(/\bcolour\w*|\bfavourite\w*|\bcentre\b|\borganise\w*|\brecognise\w*|\btravelling\b/gi);
+  return !brit;
+})(), (allSrc.match(/\bcolour\w*|\bfavourite\w*|\bcentre\b|\borganise\w*|\brecognise\w*/gi) || []).slice(0, 5).join(','));
+ok('the British spelling of practice is gone in every form and case',
+  !/practi\u0073e|practi\u0073ed|practi\u0073ing/i.test(allSrc));
+ok('"maths" is gone — the game says math',
+  !/\bmaths\b/i.test(allSrc));
+ok('"grey" is gone — the game says gray',
+  !/\bgrey\b/i.test(allSrc));
+
+/* Units are a curriculum question, not a spelling one. US elementary schools
+   teach inches, feet and yards at these grades. */
+ok('the tutor teaches US customary units, not metric', (() => {
+  TC.seed(21);
+  for (let lvl = 1; lvl <= 5; lvl++) {
+    for (let i = 0; i < 20; i++) {
+      const q = TC.question('measurement', lvl);
+      if (!q) continue;
+      if (/centimet|kilomet|\bmetres?\b|\bmeters?\b/i.test(q.prompt + ' ' + (q.explain || ''))) {
+        return false;
+      }
+    }
+  }
+  return true;
+})());
+ok('measurement questions use inches, feet, yards or miles', (() => {
+  TC.seed(22);
+  let seen = 0;
+  for (let lvl = 1; lvl <= 5; lvl++) {
+    for (let i = 0; i < 10; i++) {
+      const q = TC.question('measurement', lvl);
+      if (q && /inch|feet|foot|yard|mile/i.test(q.prompt)) seen++;
+    }
+  }
+  return seen >= 40;
+})());
+ok('and the walkthroughs teach the same units', (() => {
+  TC.seed(23);
+  for (let lvl = 3; lvl <= 5; lvl++) {
+    const q = TC.question('measurement', lvl);
+    const p = WW.tutorSteps.build(q);
+    if (!p) continue;
+    const all = p.steps.join(' ');
+    if (/centimet|kilomet|\bmeters?\b/i.test(all)) return false;
+    if (!/inch|feet|foot|yard/i.test(all)) return false;
+  }
+  return true;
+})());
+ok('the conversions are actually right', (() => {
+  TC.seed(24);
+  for (let i = 0; i < 40; i++) {
+    const q3 = TC.question('measurement', 3);
+    const ft = q3.prompt.match(/(\d+) feet/);
+    if (ft && Number(q3.answer) !== +ft[1] * 12) return false;
+    const q4 = TC.question('measurement', 4);
+    const yd = q4.prompt.match(/(\d+) yards/);
+    if (yd && Number(q4.answer) !== +yd[1] * 3) return false;
+  }
+  return true;
+})());
+
+/* The spelling bank must not ask for a word a US child would not produce. */
+ok('no spelling clue has a different US answer', (() => {
+  TC.seed(25);
+  for (let lvl = 1; lvl <= 6; lvl++) {
+    for (let i = 0; i < 20; i++) {
+      const q = TC.question('spelling', lvl);
+      if (!q) continue;
+      /* "the season after summer" => a US child writes "fall", not "autumn" */
+      if (/season after summer/i.test(q.prompt)) return false;
+    }
+  }
+  return true;
+})());
+ok('no spelling answer is more than one word, so typing cannot trip a child', (() => {
+  TC.seed(26);
+  for (let lvl = 1; lvl <= 6; lvl++) {
+    for (let i = 0; i < 20; i++) {
+      const q = TC.question('spelling', lvl);
+      if (q && /\s/.test(String(q.answer).trim())) return false;
+    }
+  }
+  return true;
+})());
+
+section('28b. WonderTutor: "Show me how" walks the method through');
+const ST = WW.tutorSteps;
+freshTutor(3);
+
+ok('a wrong answer can be followed by a real walkthrough', (() => {
+  TC.seed(4);
+  const q = TC.question('addition', 4);
+  const p = ST.build(q);
+  return !!p && p.steps.length >= 3;
+})());
+ok('the steps are ordered and end with the answer', (() => {
+  TC.seed(4);
+  const q = TC.question('multiplication', 3);
+  const p = ST.build(q);
+  return p.steps[p.steps.length - 1].indexOf(String(q.answer)) !== -1;
+})());
+ok('the answer is LAST, so the method is seen on the way past it', (() => {
+  TC.seed(8);
+  const q = TC.question('division', 4);
+  const p = ST.build(q);
+  /* no earlier step may give the answer away as a bare conclusion */
+  return !/^So /.test(p.steps[0]);
+})());
+ok('addition is broken into tens and ones for bigger numbers', (() => {
+  const p = ST.build({ skillId: 'addition', prompt: 'What is 56 + 82?',
+                       answer: '138', kind: 'number' });
+  return /tens/.test(p.steps.join(' ')) && /ones/.test(p.steps.join(' '));
+})());
+ok('small addition is taught by counting on instead', (() => {
+  const p = ST.build({ skillId: 'addition', prompt: 'What is 3 + 4?',
+                       answer: '7', kind: 'number' });
+  return /count on/i.test(p.steps.join(' '));
+})());
+ok('multiplication is shown as repeated addition', (() => {
+  const p = ST.build({ skillId: 'multiplication', prompt: 'What is 8 × 4?',
+                       answer: '32', kind: 'number' });
+  const all = p.steps.join(' ');
+  return /repeated addition/i.test(all) && /8 \+ 8 \+ 8 \+ 8/.test(all);
+})());
+ok('division is shown as counting up in groups', (() => {
+  const p = ST.build({ skillId: 'division', prompt: 'What is 12 ÷ 3?',
+                       answer: '4', kind: 'number' });
+  return /how many 3s/i.test(p.steps.join(' '));
+})());
+ok('subtraction over twenty is taken away in pieces', (() => {
+  const p = ST.build({ skillId: 'subtraction', prompt: 'What is 73 − 46?',
+                       answer: '27', kind: 'number' });
+  return /in pieces/i.test(p.steps.join(' '));
+})());
+ok('a multiple-choice question gets an elimination strategy', (() => {
+  const p = ST.build({ skillId: 'phonics', kind: 'choice',
+                       prompt: 'Which word rhymes with cat?',
+                       choices: ['hat', 'dog'], answer: 'hat',
+                       explain: 'Cat and hat end with the same sound.' });
+  return !!p && /cross out/i.test(p.steps.join(' '));
+})());
+ok('a passage question tells the child to look back at the passage', (() => {
+  const p = ST.build({ skillId: 'comprehension', kind: 'choice',
+                       passage: 'Nia planted a seed.', prompt: 'What did Nia plant?',
+                       choices: ['A seed', 'A tree'], answer: 'A seed' });
+  return /read the passage again/i.test(p.steps.join(' '));
+})());
+
+/* The guarantee that matters: a method must reach the right answer. */
+ok('EVERY question in the bank has a walkthrough', (() => {
+  TC.seed(31);
+  let total = 0, built = 0;
+  TT.SKILLS.forEach((sk) => {
+    for (let lvl = sk.grades[0]; lvl <= sk.grades[1]; lvl++) {
+      for (let i = 0; i < 6; i++) {
+        const q = TC.question(sk.id, lvl);
+        if (!q) continue;
+        total++;
+        if (ST.build(q)) built++;
+      }
+    }
+  });
+  return total > 500 && built === total;
+})());
+ok('and no walkthrough ever ends somewhere other than the real answer', (() => {
+  TC.seed(77);
+  const bad = [];
+  TT.SKILLS.forEach((sk) => {
+    for (let lvl = sk.grades[0]; lvl <= sk.grades[1]; lvl++) {
+      for (let i = 0; i < 6; i++) {
+        const q = TC.question(sk.id, lvl);
+        if (!q) continue;
+        const p = ST.build(q);
+        if (!p) continue;
+        const last = p.steps[p.steps.length - 1];
+        if (last.indexOf(String(q.answer)) === -1) bad.push(sk.id);
+      }
+    }
+  });
+  return bad.length === 0;
+})());
+ok('an unknown skill with an explanation still gets a usable walkthrough', (() => {
+  /* The generic fallback is legitimate: explanation, then the answer. */
+  const p = ST.build({ skillId: 'nonexistent-skill', kind: 'text',
+                       prompt: 'What is the capital of France?',
+                       answer: 'Paris', explain: 'It is a city in Europe.' });
+  return !!p && p.steps[p.steps.length - 1].indexOf('Paris') !== -1;
+})());
+ok('a question with no answer and no explanation gets nothing, not a guess',
+  ST.build({ skillId: 'nonexistent-skill', kind: 'text', prompt: 'Hmm?' }) === null);
+ok('a METHOD that does not reach the real answer is thrown away', (() => {
+  /* Exercise the verification directly: a builder that confidently works its
+     way to the wrong number must not be shown to a child. */
+  const real = ST.BUILDERS.addition;
+  ST.BUILDERS.addition = function () {
+    return ['Add the tens.', 'Add the ones.', 'So the answer is 9999.'];
+  };
+  const p = ST.build({ skillId: 'addition', prompt: 'What is 2 + 2?',
+                       answer: '4', kind: 'number' });
+  ST.BUILDERS.addition = real;
+  return p === null;
+})());
+ok('no step is a wall of text', (() => {
+  TC.seed(12);
+  for (let i = 0; i < 60; i++) {
+    const q = TC.question('addition', 4);
+    const p = ST.build(q);
+    if (p.steps.some((x) => x.length > 180)) return false;
+  }
+  return true;
+})());
+ok('every step passes the output safety rules', (() => {
+  TC.seed(19);
+  for (const sk of TT.SKILLS) {
+    const q = TC.question(sk.id, sk.grades[0]);
+    if (!q) continue;
+    const p = ST.build(q);
+    if (p && p.steps.some((x) => !S2.inspectOutput(x).ok)) return false;
+  }
+  return true;
+})());
+ok('building a walkthrough never throws on a malformed question', (() => {
+  const junk = [null, {}, { skillId: 'addition' },
+                { skillId: 'addition', prompt: 'no numbers here', answer: '5' },
+                { skillId: 'division', prompt: 'What is 5 ÷ 0?', answer: '0' }];
+  return junk.every((q) => { try { ST.build(q); return true; } catch (e) { return false; } });
+})());
+
+/* Help is offered where it helps, and withheld where it would undermine. */
+ok('the UI offers help after a missed PRACTICE question', (() => {
+  const src = read('js/tutor/screen.js');
+  return /res\.step === 'retry'[\s\S]{0,400}?_offerHelp/.test(src);
+})());
+ok('the session carries the missed question so help can be offered',
+  /question: q,/.test(read('js/tutor/session.js')));
+ok('but the CHECK phase deliberately carries no question, so no help there', (() => {
+  const src = read('js/tutor/session.js');
+  /* the check branch must not pass `question` */
+  const check = src.slice(src.indexOf("if (phase === 'check') {"),
+                          src.indexOf("/* --- practice --- */"));
+  return check.indexOf('question: q') === -1;
+})());
+ok('the walkthrough ends by offering a FRESH question, not the same one',
+  /Let me try another one/.test(read('js/tutor/screen.js')));
+ok('steps are revealed one at a time, not dumped at once',
+  /Next step/.test(read('js/tutor/screen.js')));
+ok('and an impatient child can still see them all',
+  /Show me all the steps/.test(read('js/tutor/screen.js')));
 
 section('29. WonderTutor: talking out loud');
 const VC = WW.tutorVoiceChat;

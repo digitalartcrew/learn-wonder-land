@@ -308,7 +308,7 @@
     isSolid: function (skillId) {
       var d = Profile.data();
       var s = d.skills[skillId];
-      if (!s) return false;       /* never practised is not solid */
+      if (!s) return false;       /* never practiced is not solid */
       return s.attempted >= MIN_ATTEMPTS_FOR_MASTERY && s.mastery >= 0.7;
     },
 
@@ -449,7 +449,7 @@
     domainSummary: function (domainId) {
       var d = Profile.data();
       var skills = T.skillsIn(domainId);
-      var out = { domainId: domainId, mastered: [], practising: [], review: [], untouched: 0, level: null };
+      var out = { domainId: domainId, mastered: [], practicing: [], review: [], untouched: 0, level: null };
       var levels = [];
 
       skills.forEach(function (def) {
@@ -458,7 +458,7 @@
         levels.push(s.level);
         if (Profile.isMastered(def.id)) out.mastered.push(def);
         else if (s.needsReview || s.mastery < STRUGGLING_BELOW) out.review.push(def);
-        else out.practising.push(def);
+        else out.practicing.push(def);
       });
 
       if (levels.length) {

@@ -509,7 +509,7 @@
         var kind = weatherFor(cfg.temp, cfg.moisture, cfg.wind);
         var wt = WEATHER_TYPES[kind];
 
-        /* sky colour from temperature */
+        /* sky color from temperature */
         var warm = U.clamp((cfg.temp + 10) / 50, 0, 1);
         var top = kind === 'storm' ? '#39405e' : (kind === 'snow' ? '#b7c7e0' : (kind === 'rain' ? '#6d7f99' : (kind === 'fog' ? '#9aa3ad' : '#59b6ff')));
         var bot = kind === 'storm' ? '#5a6180' : (kind === 'snow' ? '#e7eef8' : (kind === 'rain' ? '#9fb0c4' : (kind === 'fog' ? '#cfd5da' : (warm > 0.65 ? '#ffd9a0' : '#bfe6ff'))));

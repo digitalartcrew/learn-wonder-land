@@ -85,7 +85,7 @@
     { id: 'multiplication',  domain: 'math', name: 'Multiplication',      grades: [2, 5], prereq: ['addition'] },
     { id: 'division',        domain: 'math', name: 'Division',            grades: [3, 6], prereq: ['multiplication'] },
     { id: 'fractions',       domain: 'math', name: 'Fractions',           grades: [2, 6], prereq: ['division'] },
-    { id: 'money-math',      domain: 'math', name: 'Money maths',         grades: [1, 4], prereq: ['addition'] },
+    { id: 'money-math',      domain: 'math', name: 'Money math',         grades: [1, 4], prereq: ['addition'] },
     { id: 'measurement',     domain: 'math', name: 'Measurement',         grades: [1, 5], prereq: ['number-sense'] },
     { id: 'geometry',        domain: 'math', name: 'Shapes and geometry',  grades: [0, 6], prereq: [] },
     { id: 'word-problems',   domain: 'math', name: 'Word problems',       grades: [1, 6], prereq: ['addition', 'subtraction'] },
@@ -164,7 +164,7 @@
       return SKILLS.filter(function (s) { return g >= s.grades[0] && g <= s.grades[1]; });
     },
 
-    /* The level a skill should be practised at for a child in this grade,
+    /* The level a skill should be practiced at for a child in this grade,
        kept inside the skill's own range so we never ask a Grade 6 child to
        do Grade 6 counting or a Kindergartener to do Grade 0 division. */
     defaultLevel: function (skillId, grade) {

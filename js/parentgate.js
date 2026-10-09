@@ -29,7 +29,7 @@
    One labelled numeric field, an instruction wired up with
    aria-describedby, errors announced through role="status", a
    visible focus ring, and a way out that does not require solving
-   anything. Nothing here depends on colour or on hover.
+   anything. Nothing here depends on color or on hover.
 
    WHAT THIS IS NOT
    ----------------

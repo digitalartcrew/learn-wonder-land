@@ -97,6 +97,8 @@ WonderWorld/
 │   │   ├── taxonomy.js        domains, skills, grade bands, prerequisites
 │   │   ├── profile.js         WW.learningProfile — grade, language, mastery
 │   │   ├── content.js         offline lesson/question bank + scoring
+│   │   ├── answers.js         offline question answering
+│   │   ├── steps.js           step-by-step walkthroughs
 │   │   ├── safety.js          outbound allow-list, input/output screening
 │   │   ├── emotion.js         expression allow-list + deterministic rules
 │   │   ├── avatar.js          the animated SVG character
@@ -238,7 +240,7 @@ Grown-Ups → **Export progress** dumps the raw JSON for a manual backup.
 
 ## 5. Adding content
 
-### New maths questions — `js/worlds/math.js`
+### New math questions — `js/worlds/math.js`
 Push an object onto `GENERATORS`:
 
 ```js
@@ -389,9 +391,9 @@ node tools/browser-test.js http://127.0.0.1:8111
 >   node tools/browser-test.js http://localhost:8111
 > ```
 
-**`logic-test.js` (403 checks)** verifies save/load round-trips and
+**`logic-test.js` (437 checks)** verifies save/load round-trips and
 forward-compatible merging, level curves, unlock thresholds, crystal
-restoration, 50 000 generated maths questions (answer always present, no
+restoration, 50 000 generated math questions (answer always present, no
 duplicate options, arithmetic actually correct), story content integrity, that
 all six weather types are reachable, that a well-planned green city can meet all
 five goals within budget, that the lemonade economics behave (hot sells more
@@ -402,7 +404,7 @@ that each one renders valid SVG with a screen-reader description and references
 no external files, and that the celebration audio degrades safely when there is
 no AudioContext.
 
-**`browser-test.js` (364 checks)** plays the game: creates a character, crosses
+**`browser-test.js` (374 checks)** plays the game: creates a character, crosses
 the bridge, deliberately answers wrong to confirm hints appear and nothing
 "fails" the child, reads a whole story chapter including spelling and sentence
 building, runs the plant/magnet/weather experiments, builds a city and watches
@@ -466,6 +468,15 @@ the whole first-run flow. Full mapping in
 | Reduced motion stops the movement but the face still changes | browser |
 | Existing saves, monetization, entitlements and free worlds are untouched | logic §28 |
 | Tutoring rewards cannot be farmed by repeating one lesson | logic §28 |
+| **A missed question offers a step-by-step method, not just encouragement** | logic §28b, browser |
+| Every question in the bank has a walkthrough | logic §28b |
+| A method that does not reach the real answer is thrown away | logic §28b |
+| The answer is the LAST step, revealed one at a time | logic §28b, browser |
+| Help is withheld during the check phase, which is the evidence | logic §28b |
+| After a walkthrough the child gets a fresh question | logic §28b, browser |
+| **US English throughout — no British spellings survive** | logic §27b |
+| Measurement teaches inches, feet and yards, and the conversions are right | logic §27b |
+| No spelling clue has a different US answer, and none is two words | logic §27b |
 | **Talking out loud is off until a grown-up consents, and is revocable** | logic §29, browser |
 | A child with no consent is offered no microphone at all | browser |
 | The microphone starts disabled and is push-to-talk only | logic §29 |
@@ -775,12 +786,35 @@ or too easy, that is the dial.
 ### The loop
 
 ```
-ASSESS → TEACH → PRACTISE → CHECK → ADAPT → REVIEW → ADVANCE
+ASSESS → TEACH → PRACTICE → CHECK → ADAPT → REVIEW → ADVANCE
 ```
 
 Practice gives help and lets the child retry; the check does not, and only the
 check counts towards mastery. A missed answer gets *"Almost! Let's look at it
 another way."* and a different explanation — never "wrong again".
+
+### Getting it wrong is where the teaching happens
+
+A missed practice question offers **🤔 Show me how** — the method worked
+through one step at a time, derived from that question's own numbers:
+
+```
+What is 56 + 82?
+  1. Big numbers are easier in pieces. 56 is 50 and 6. 82 is 80 and 2.
+  2. Add the tens first: 50 + 80 = 130.
+  3. Then add the ones: 6 + 2 = 8.
+  4. Put the two parts together: 130 + 8 = 138.
+  5. So 56 + 82 = 138.
+```
+
+The answer is always the last step, so tapping through means passing the method
+on the way. Afterwards the child gets a **fresh** question — being walked
+through one is not the same as having solved it. Covers 100% of the question
+bank, and a method that does not reach the real answer is discarded rather than
+shown.
+
+It is deliberately **not** offered during the check phase, which is the
+evidence — the session omits the question there so the UI cannot offer it.
 
 ### Real choices, and not too much talking
 
@@ -939,7 +973,7 @@ Two independent switches in **Settings**:
 
 The **Grown-Ups dashboard** (title screen → *Grown-Ups*) shows total learning
 time, activities completed, per-subject accuracy and completion, recent
-accomplishments, and suggests what to practise next. It is visually distinct
+accomplishments, and suggests what to practice next. It is visually distinct
 from the child's game and needs no login.
 
 ---
@@ -970,7 +1004,7 @@ gets stuck or shamed.
 Accessibility: 44 pt+ touch targets, a "bigger text" mode, a "reduce motion"
 mode (which also respects `prefers-reduced-motion`), a mute button, ARIA labels
 and live regions throughout, visible focus rings, text-and-icon labels so no
-information is conveyed by colour alone, and optional read-aloud for story
+information is conveyed by color alone, and optional read-aloud for story
 passages via the device's speech synthesiser.
 
 ---
@@ -1070,7 +1104,7 @@ and every one of them is disabled under `prefers-reduced-motion` or the in-game
   it gets built.
 - A cosmetic gem shop: outfits, companion accessories and tree decorations.
   Bought with gems that are **earned by learning** — gems are never sold.
-- More story chapters and a second maths game mode (both `tier: 'plus'`).
+- More story chapters and a second math game mode (both `tier: 'plus'`).
 - The "who is playing?" screen that turns the Explorer roster in §9 into a real
   multi-child switcher.
 - A first-party backup service behind `WW.sync`, with the privacy review and

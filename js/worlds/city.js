@@ -33,7 +33,7 @@
     { id: 'wind', emoji: '🌬️', name: 'Wind turbine', cost: 52,
       env: 5, happy: -1, energy: 20, income: 0,
       fact: 'Wind turbines spin to make electricity with no smoke at all. Some people think they are noisy, though!' },
-    { id: 'recycle', emoji: '♻️', name: 'Recycling centre', cost: 42,
+    { id: 'recycle', emoji: '♻️', name: 'Recycling center', cost: 42,
       env: 11, happy: 2, energy: -3, income: 3,
       fact: 'Recycling turns old cans, paper and bottles into new ones. That means digging up fewer new materials.' },
     { id: 'bus', emoji: '🚌', name: 'Bus stop', cost: 32,
@@ -52,7 +52,7 @@
     '💡 Tip: trees are the cheapest way to lift your green score.',
     '💡 Tip: if ⚡ energy goes below zero, the lights flicker. Add solar or wind!',
     '💡 Tip: bus stops make people happy AND cut pollution.',
-    '💡 Tip: a recycling centre saves materials and earns a little money.',
+    '💡 Tip: a recycling center saves materials and earns a little money.',
     '💡 Tip: factories earn the most money but hurt the air the most.',
     '💡 Tip: happiness goes up with parks, buses and homes.'
   ];

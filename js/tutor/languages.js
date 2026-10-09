@@ -13,7 +13,7 @@
    This file is only ever about the first one. The second is a skill
    domain and will live in the taxonomy when it is built — see
    `WW.tutorLanguages.LEARNING_MODE_NOTE` at the bottom. Keeping them
-   apart matters: "teach me maths in Spanish" and "teach me Spanish"
+   apart matters: "teach me math in Spanish" and "teach me Spanish"
    need completely different content.
 
    HONESTY ABOUT CAPABILITY

@@ -228,7 +228,7 @@
           }
         }, [
           U.el('span', { class: 'tutor-lang-name', text: label }),
-          /* State is a word, never only a colour. */
+          /* State is a word, never only a color. */
           U.el('small', { class: 'tutor-lang-state', text:
             l.state === Langs.SUPPORTED ? 'ready'
               : (l.state === Langs.BETA ? 'beta' : 'needs validation') })
@@ -407,7 +407,7 @@
       }
 
       /* 2. Their own pick. */
-      option('📚', 'Choose a subject', 'Maths, reading, science and more', null,
+      option('📚', 'Choose a subject', 'Math, reading, science and more', null,
         function () { Screen.subjectPicker(activity); });
 
       /* 3. The honest one: work on a weak spot. Only offered when there
@@ -415,7 +415,7 @@
       var weak = Profile.weakest(1)[0];
       if (weak && WW.tutorContent.has(weak.skillId)) {
         var wd = T.skill(weak.skillId);
-        option('💪', 'Practise something tricky',
+        option('💪', 'Practice something tricky',
           wd ? wd.name : null, null,
           function () {
             Screen.runLesson({ skillId: weak.skillId, level: weak.level, reason: 'practice' });
@@ -571,7 +571,7 @@
           U.el('h3', { text: step.title }),
           U.el('p', { class: 'tutor-lesson-text', text: step.text })
         ]);
-        card.appendChild(UI.bigButton('Got it — let\'s practise', function () {
+        card.appendChild(UI.bigButton('Got it — let\'s practice', function () {
           Sound.play('tap');
           Screen._step(Session.next());
         }, 'primary wide'));
@@ -601,6 +601,9 @@
                without telling them why. A sound is enough here. */
             say(res.text, res.expression);
             Screen._flash(card, res.text, false);
+            /* A child who did not know how to do it still does not. Offer the
+               method, not just encouragement. */
+            Screen._offerHelp(card, Session._q);
             return;
           }
           Screen._afterAnswer(res.correct, res.explain || res.text, function () {
@@ -705,7 +708,117 @@
       }
       var card = UI.card('tutor-card', kids);
       card.appendChild(UI.bigButton('Next', function () { Sound.play('tap'); done(); }, 'primary wide'));
+
+      /* Even after the answer has been shown, the METHOD may not have been.
+         `res.question` is the one they just missed. */
+      if (!correct && res && res.question) {
+        Screen._offerHelp(card, res.question, done);
+      }
       act.appendChild(card);
+    },
+
+    /* ---------- "Show me how" ----------
+       Appends the offer to a card. Only appears when there is a real
+       walkthrough to give, so the button never leads to a shrug. */
+    _offerHelp: function (card, question, onDone) {
+      if (!card || !question || !WW.tutorSteps) return;
+      var plan = WW.tutorSteps.build(question);
+      if (!plan) return;
+      if (card.querySelector('.tutor-help-btn')) return;
+
+      card.appendChild(U.el('button', {
+        class: 'big-btn secondary wide tutor-help-btn',
+        text: '🤔 Show me how',
+        onclick: function () {
+          Sound.play('tap');
+          Screen.walkthrough(question, plan, onDone);
+        }
+      }));
+    },
+
+    /* One step at a time, on demand. The answer is the last step, so a child
+       who taps all the way through has at least passed the method on the way.
+
+       Afterwards they get a FRESH question at the same level: being walked
+       through one problem is not the same as having solved it, and it should
+       not end the practice either. */
+    walkthrough: function (question, plan, onDone) {
+      var act = document.getElementById('tutor-activity');
+      if (!act) return;
+      plan = plan || WW.tutorSteps.build(question);
+      if (!plan) return;
+
+      act.innerHTML = '';
+      say(plan.intro, 'encouraging', true);
+
+      var card = UI.card('tutor-card', [
+        U.el('h3', { text: 'Let\'s do it together' }),
+        U.el('p', { class: 'tutor-question', text: question.prompt })
+      ]);
+      if (question.passage) {
+        card.appendChild(U.el('p', { class: 'tutor-passage', text: question.passage }));
+      }
+
+      var list = U.el('ol', { class: 'tutor-steps' });
+      card.appendChild(list);
+
+      var counter = U.el('p', { class: 'tutor-progress muted small', role: 'status' });
+      card.appendChild(counter);
+
+      var shown = 0;
+      var nextBtn, doneBtn;
+
+      function reveal() {
+        if (shown >= plan.steps.length) return;
+        var text = plan.steps[shown];
+        shown++;
+        var li = U.el('li', { class: 'tutor-step', text: text });
+        list.appendChild(li);
+        if (WW.FX) WW.FX.pulse(li, 'pop');
+        Sound.play('tap');
+        /* Each step is read out — following a method aloud is the whole point
+           of a walkthrough, and this is the one place extra speech earns it. */
+        if (WW.tutorVoice) WW.tutorVoice.speak(text, Profile.language());
+
+        counter.textContent = 'Step ' + shown + ' of ' + plan.steps.length;
+
+        if (shown >= plan.steps.length) {
+          if (nextBtn) nextBtn.remove();
+          counter.textContent = plan.closing;
+          if (WW.tutorAvatar) WW.tutorAvatar.react('happy');
+          card.appendChild(doneBtn);
+        }
+      }
+
+      doneBtn = UI.bigButton('Let me try another one', function () {
+        Sound.play('tap');
+        /* A fresh question at the same level, so they practice the method
+           rather than re-reading the one they got wrong. */
+        if (typeof onDone === 'function') { onDone(); return; }
+        Screen._step(Session.next());
+      }, 'primary wide');
+
+      nextBtn = UI.bigButton('Next step →', function () { reveal(); }, 'secondary wide');
+      card.appendChild(nextBtn);
+
+      card.appendChild(U.el('button', {
+        class: 'ghost-btn', text: 'Show me all the steps',
+        onclick: function () {
+          Sound.play('tap');
+          if (WW.tutorVoice) WW.tutorVoice.stop();
+          while (shown < plan.steps.length) {
+            var text = plan.steps[shown];
+            shown++;
+            list.appendChild(U.el('li', { class: 'tutor-step', text: text }));
+          }
+          counter.textContent = plan.closing;
+          if (nextBtn) nextBtn.remove();
+          if (!card.contains(doneBtn)) card.appendChild(doneBtn);
+        }
+      }));
+
+      act.appendChild(card);
+      reveal();            /* open on step one, not an empty list */
     },
 
     _flash: function (card, text, good) {
@@ -822,7 +935,7 @@
 
       VC.onListening = function (live) {
         btn.classList.toggle('is-live', !!live);
-        /* The indicator is a word as well as a colour and a dot. */
+        /* The indicator is a word as well as a color and a dot. */
         status.textContent = live ? '🔴 Listening — let go when you\'re done.'
                                   : 'Hold the button to talk.';
       };

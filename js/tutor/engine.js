@@ -4,7 +4,7 @@
 
    THE LOOP
    --------
-       ASSESS → TEACH → PRACTISE → CHECK → ADAPT → REVIEW → ADVANCE
+       ASSESS → TEACH → PRACTICE → CHECK → ADAPT → REVIEW → ADVANCE
 
    This file owns the decisions in that loop. The running lesson
    itself lives in tutor/session.js; everything here is "what should
@@ -297,7 +297,7 @@
           return 'Before we tackle ' + (over ? over.name.toLowerCase() : 'that') +
                  ', let\'s make ' + name + ' really solid. It makes the next bit much easier.';
         case 'practice':
-          return 'I found something we can practise! Let\'s work on ' + name + ' together.';
+          return 'I found something we can practice! Let\'s work on ' + name + ' together.';
         case 'new':
           return 'Today we\'re going to learn about ' + name + '!';
         case 'advance':
@@ -386,7 +386,7 @@
         WW.Progress.logActivity({
           world: T.worldFor(skillId) || 'tutor',
           name: 'WonderTutor: ' + (def ? def.name : skillId),
-          detail: mastered ? 'Mastered' : 'Practised',
+          detail: mastered ? 'Mastered' : 'Practiced',
           xp: paid.xp
         });
       }

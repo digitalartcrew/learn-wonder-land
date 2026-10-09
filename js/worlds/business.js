@@ -27,7 +27,7 @@
   ];
 
   var UPGRADES = [
-    { id: 'sign', emoji: '🪧', name: 'Big colourful sign', cost: 10, day: 2,
+    { id: 'sign', emoji: '🪧', name: 'Big colorful sign', cost: 10, day: 2,
       desc: 'Brings about 4 extra customers every single day — a one-off cost that keeps paying back.' },
     { id: 'cookies', emoji: '🍪', name: 'Add cookies to the menu', cost: 15, day: 3,
       desc: 'About 18% more customers, but each cup costs 10¢ more to make.' },
@@ -307,8 +307,8 @@
       ]);
       body.appendChild(head);
 
-      /* the maths, written out */
-      var calc = UI.card('', [U.el('h3', { text: '🧮 Today\'s maths' })]);
+      /* the math, written out */
+      var calc = UI.card('', [U.el('h3', { text: '🧮 Today\'s math' })]);
       calc.appendChild(this.calcRow('Revenue', U.money(this.plan.price) + ' × ' + r.sold + ' cups', U.money(r.revenue), 'in'));
       calc.appendChild(this.calcRow('Cost of lemonade', this.plan.cups + ' cups × ' +
         Math.round(this.cupCost() * 100) + '¢', '−' + U.money(U.round(this.plan.cups * this.cupCost(), 2)), 'out'));

@@ -244,10 +244,12 @@
           step: 'result',
           correct: correct,
           /* No explanation during the check — that is what makes it a check.
-             The explanation comes in the verdict. */
+             No walkthrough either: `question` is deliberately absent, so the
+             UI cannot offer "Show me how" here. The explanation comes in the
+             verdict, once the evidence is already taken. */
           text: correct ? Session._praise() : 'Thanks! Let\'s keep going.',
           expression: correct ? 'happy' : 'neutral',
-          answer: correct ? null : null
+          answer: null
         });
       }
 
@@ -293,6 +295,9 @@
             explain: checked.ok ? checked.text : (q.explain || null),
             answer: q.answer,
             steppedDown: stepped,
+            /* Carried so the UI can offer a step-by-step walkthrough of the
+               problem they actually missed. PRACTICE ONLY — see below. */
+            question: q,
             expression: 'gentle_correction'
           };
         });
@@ -331,7 +336,7 @@
 
       if (WW.events) {
         WW.events.track('activity_completed', {
-          kind: 'tutor_lesson', feature: Session.skillId, result: mastered ? 'mastered' : 'practising'
+          kind: 'tutor_lesson', feature: Session.skillId, result: mastered ? 'mastered' : 'practicing'
         });
       }
 

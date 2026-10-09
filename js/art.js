@@ -366,7 +366,7 @@
     'misty-woods': 'Luna walks through misty woods with the little star glowing in her fur.',
     'wind-wakes': 'The Wind wakes up and swirls autumn leaves into a dancing ring above Luna.',
     'star-falters': 'The little star drifts back down from the sky, too tired to fly, as Luna watches.',
-    'knowledge-tree': 'The Knowledge Tree glows in the night with five coloured crystals shining around its branches.',
+    'knowledge-tree': 'The Knowledge Tree glows in the night with five colored crystals shining around its branches.',
     'star-bridge': 'A bright beam of light rises from the Knowledge Tree and the little star climbs it back into the sky.',
     'star-home': 'One star shines brighter than all the rest in the night sky while Luna watches happily from her hill.'
   };

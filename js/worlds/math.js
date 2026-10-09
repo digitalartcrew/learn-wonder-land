@@ -40,7 +40,7 @@
     return { correct: correct, choices: U.shuffle(out) };
   }
 
-  /* Rows of emoji for small numbers — makes maths concrete */
+  /* Rows of emoji for small numbers — makes math concrete */
   function emojiRow(n, emoji) {
     var out = '';
     for (var i = 0; i < n; i++) out += '<span class="e-item">' + emoji + '</span>';
@@ -415,7 +415,7 @@
       var w = S.world('math');
       body.innerHTML = '';
       document.getElementById('math-bar').innerHTML =
-        '<span class="chip">Lv ' + this.tier() + ' maths</span>';
+        '<span class="chip">Lv ' + this.tier() + ' math</span>';
 
       body.appendChild(UI.worldHero('math', 'Math Island',
         'The Rainbow Bridge is broken! Each answer builds one more plank.'));
@@ -433,7 +433,7 @@
           'Wrong answers just mean a hint — you never fall!' }),
         UI.progressRow('math')
       ]);
-      card.appendChild(U.el('p', { class: 'label-row', text: 'Choose what to practise:' }));
+      card.appendChild(U.el('p', { class: 'label-row', text: 'Choose what to practice:' }));
       var chips = U.el('div', { class: 'chips topic-chips' });
       TOPICS.forEach(function (t) {
         chips.appendChild(U.el('button', {
@@ -448,7 +448,7 @@
 
       var tries = w.correct + w.wrong;
       body.appendChild(UI.card('', [
-        U.el('h4', { text: '🧮 My maths so far' }),
+        U.el('h4', { text: '🧮 My math so far' }),
         U.el('div', { class: 'stat-row' }, [
           U.el('div', { class: 'stat-pill' }, [U.el('b', { text: String(w.runs) }), U.el('small', { text: 'bridges' })]),
           U.el('div', { class: 'stat-pill' }, [U.el('b', { text: String(w.correct) }), U.el('small', { text: 'correct' })]),

@@ -206,7 +206,7 @@ function userPrompt(intent, ctx) {
     bits.push('Say one short, warm, specific thing about how they are doing. One sentence.');
   } else {
     bits.push('Introduce this skill in three or four short sentences, then invite them ' +
-              'to practise. Use one concrete example with real numbers or real objects.');
+              'to practice. Use one concrete example with real numbers or real objects.');
   }
   return bits.join('\n');
 }

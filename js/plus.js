@@ -176,7 +176,7 @@
         ['📚', 'New stories and adventures', 'More Story Forest chapters as they are written.'],
         ['🧮', 'More learning challenges', 'Additional Math adventures and modes.'],
         ['👧', 'Multiple Explorer profiles', 'Up to four Explorers, each with their own progress.'],
-        ['📊', 'Advanced learning reports', 'Per-subject detail, strengths and what to practise.'],
+        ['📊', 'Advanced learning reports', 'Per-subject detail, strengths and what to practice.'],
         ['☁️', 'Progress backup', 'Keep a copy of progress and move it between devices.'],
         ['🎨', 'More ways to customize your Explorer', 'Included — never sold separately.']
       ].forEach(function (row) {
